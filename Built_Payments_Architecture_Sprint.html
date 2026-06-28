@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>Payments &amp; Embedded Finance Architecture — Built Technologies (Illustrative)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    color-scheme: dark;
+    --paper:#13151A;
+    --panel:#1B1E25;
+    --panel-2:#22262F;
+    --ink:#ECEEF2;
+    --muted:#B2B8C2;
+    --faint:#8A909C;
+    --line:#2B303A;
+    --line-strong:#3A4049;
+    --amber:#E0A23B;
+    --indigo:#8B84FF;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 28px}
+  .mono{font-family:"IBM Plex Mono",monospace}
+
+  /* header */
+  header{padding:58px 0 34px;border-bottom:2px solid var(--ink)}
+  .kicker{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;align-items:baseline}
+  .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--amber);font-weight:500}
+  .doc-id{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint)}
+  h1{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:clamp(30px,5.2vw,52px);
+    line-height:1.04;letter-spacing:-.02em;margin:16px 0 0;max-width:20ch}
+  .client{margin:14px 0 0;font-size:17px;color:var(--muted)}
+  .client b{color:var(--ink)}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 26px;margin:22px 0 0;font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--muted)}
+  .meta span b{color:var(--ink);font-weight:600}
+  .disclaim{margin:20px 0 0;padding:11px 14px;border:1px dashed var(--line-strong);border-radius:9px;
+    font-size:12px;color:var(--faint);max-width:80ch;background:var(--panel)}
+
+  /* sections */
+  section{padding:48px 0;border-bottom:1px solid var(--line)}
+  .sn{display:flex;align-items:baseline;gap:14px;margin:0 0 6px}
+  .sn .num{font-family:"IBM Plex Mono",monospace;font-size:12px;color:#1A1206;background:var(--amber);
+    border-radius:5px;padding:3px 8px;letter-spacing:.06em;font-weight:600}
+  h2{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:clamp(21px,3vw,29px);letter-spacing:-.01em;margin:0}
+  .lead{color:var(--muted);max-width:76ch;margin:10px 0 26px;font-size:15.5px}
+  h3{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:16px;margin:26px 0 10px}
+  p{margin:0 0 14px}
+  .small{font-size:13.5px;color:var(--muted)}
+
+  /* chips */
+  .chip{--c:#8B84FF;--ct:#BDB8FF;--cb:#222038;--cbd:#46407A;
+    display:inline-flex;align-items:center;gap:6px;padding:5px 10px 5px 9px;border-radius:8px;
+    font-size:12.5px;font-weight:600;line-height:1.1;white-space:nowrap;
+    color:var(--ct);background:var(--cb);border:1px solid var(--cbd)}
+  .chip::before{content:"◆";font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--c)}
+  .chip[data-r="primitive"]::before{content:"▣"}
+  .chip[data-r="suite"]::before{content:"⧉"}
+  .chip[data-r="devtool"]::before{content:"⚙"}
+  .f-pay{--c:#8B84FF;--ct:#BDB8FF;--cb:#222038;--cbd:#46407A}
+  .f-rev{--c:#1FBFAC;--ct:#6FE0D1;--cb:#10302C;--cbd:#2E6359}
+  .f-bank{--c:#E0A23B;--ct:#EFC074;--cb:#2E2613;--cbd:#5C4B22}
+  .f-crypto{--c:#F2675A;--ct:#F79084;--cb:#321E1B;--cbd:#5E342E}
+  .f-ai{--c:#A98CFA;--ct:#C3ACFB;--cb:#271E3C;--cbd:#4A3A72}
+  .f-enable{--c:#EE8B45;--ct:#F3A871;--cb:#2E2014;--cbd:#5C4226}
+  .chips{display:flex;flex-wrap:wrap;gap:7px}
+
+  /* two-col */
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:18px 20px}
+  .card h4{font-family:"Space Grotesk",sans-serif;font-size:15px;margin:0 0 8px}
+  .card p{font-size:13.5px;color:var(--muted);margin:0}
+  .card .tagline{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--faint);margin:0 0 6px}
+
+  /* product table */
+  .ptable{display:flex;flex-direction:column;gap:0;border:1px solid var(--line);border-radius:13px;overflow:hidden;background:var(--panel)}
+  .prow{display:grid;grid-template-columns:190px 1fr;gap:16px;padding:14px 18px;border-top:1px solid var(--line);align-items:start}
+  .prow:first-child{border-top:none}
+  .prow .pl{display:flex}
+  .prow .pr{font-size:13.5px;color:var(--muted)}
+
+  /* flow diagram */
+  .flow{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;margin:6px 0 0}
+  .stage{display:grid;grid-template-columns:128px 1fr;gap:16px;align-items:center;padding:14px 0;position:relative}
+  .stage + .stage{border-top:1px dashed var(--line)}
+  .stage__k{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+  .stage__k b{display:block;font-family:"Space Grotesk",sans-serif;font-size:14px;font-weight:600;
+    letter-spacing:0;text-transform:none;color:var(--ink);margin-top:3px}
+  .node{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .box{border:1px solid var(--line-strong);border-radius:9px;padding:8px 11px;font-size:13px;font-weight:500;background:var(--panel-2);color:var(--ink)}
+  .box small{display:block;font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--faint);font-weight:400;margin-top:2px}
+  .ar{color:var(--amber);font-size:15px;font-weight:700}
+  .gate{border:1.5px solid #E8675A;color:#F79084;
+    background:#321C19;border-radius:9px;padding:8px 11px;font-size:12.5px;font-weight:700}
+  .gate small{display:block;font-weight:400;font-family:"IBM Plex Mono",monospace;font-size:10px;color:#E89086;margin-top:2px}
+  .branch{margin-top:8px;padding-left:14px;border-left:2px solid var(--line-strong)}
+  .branch .small{margin:0}
+
+  /* decision blocks */
+  .decision{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--indigo);
+    border-radius:12px;padding:18px 20px;margin:0 0 14px}
+  .decision h4{font-family:"Space Grotesk",sans-serif;font-size:15.5px;margin:0 0 4px}
+  .decision .verdict{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:#B3AEFF;margin:0 0 9px}
+  .decision p{font-size:13.5px;color:var(--muted);margin:0 0 8px}
+  .decision p:last-child{margin:0}
+
+  /* risk register */
+  .risk{border:1px solid var(--line);border-radius:11px;background:var(--panel);padding:14px 16px;margin:0 0 10px}
+  .risk__top{display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap}
+  .risk__name{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:14.5px}
+  .sev{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+    padding:2px 7px;border-radius:20px;border:1px solid}
+  .sev.hi{color:#F79084;border-color:#6E3329;background:#2E1A17}
+  .sev.med{color:#E6B85C;border-color:#5C4A22;background:#2C2412}
+  .risk p{font-size:13px;color:var(--muted);margin:8px 0 0}
+  .risk p b{color:var(--ink)}
+
+  /* roadmap */
+  .phase{display:grid;grid-template-columns:150px 1fr;gap:18px;padding:16px 0;border-top:1px solid var(--line)}
+  .phase:first-child{border-top:none}
+  .phase__h{font-family:"IBM Plex Mono",monospace}
+  .phase__h b{font-family:"Space Grotesk",sans-serif;display:block;font-size:15px;color:var(--ink);margin-bottom:3px}
+  .phase__h span{font-size:11px;color:var(--faint)}
+  .phase__b{font-size:13.5px;color:var(--muted)}
+  .phase__b .chips{margin-top:9px}
+
+  /* metrics */
+  .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:4px 0 18px}
+  .metric{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .metric .v{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:clamp(22px,3.4vw,30px);color:var(--ink);letter-spacing:-.01em}
+  .metric .l{font-size:12px;color:var(--muted);margin-top:4px}
+  .metric .v small{font-size:15px;color:var(--faint);font-weight:500}
+
+  ul.tight{margin:0 0 14px;padding-left:18px}
+  ul.tight li{font-size:13.5px;color:var(--muted);margin:0 0 6px}
+  ul.tight li b{color:var(--ink);font-weight:600}
+
+  footer{padding:34px 0 64px}
+  footer p{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--faint);max-width:80ch;line-height:1.7}
+
+  @media (max-width:740px){
+    .cols{grid-template-columns:1fr}
+    .metrics{grid-template-columns:1fr}
+    .prow{grid-template-columns:1fr;gap:8px}
+    .stage{grid-template-columns:1fr;gap:8px}
+    .phase{grid-template-columns:1fr;gap:8px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="kicker">
+      <span class="eyebrow">Architecture Sprint · Deliverable</span>
+      <span class="doc-id">DOC PS-2026-014 · v1.0 · Confidential (illustrative)</span>
+    </div>
+    <h1>Payments &amp; Embedded Finance Architecture</h1>
+    <p class="client">Prepared for <b>Built Technologies</b> — modernizing construction draw disbursement, contractor payouts, and embedded accounts on a single money-movement platform.</p>
+    <div class="meta">
+      <span><b>Engagement:</b> 2-week Architecture Sprint</span>
+      <span><b>Date:</b> June 21, 2026</span>
+      <span><b>Prepared by:</b> [Your name], Payments Architect</span>
+      <span><b>Fee basis:</b> Fixed-scope · $500/hr equivalent</span>
+    </div>
+    <p class="disclaim"><b>Illustrative engagement.</b> This document is a portfolio sample built entirely from publicly available information about Built Technologies. It is not affiliated with, commissioned by, or endorsed by Built, reflects no non-public information, and quotes no individual. Volumes marked “assumed” are modeling placeholders, not Built figures. Any real engagement would begin with discovery and legal/compliance review with the client’s counsel.</p>
+  </div>
+</header>
+
+<!-- 00 CONTEXT -->
+<section>
+  <div class="wrap">
+    <div class="sn"><span class="num">00</span><h2>Engagement context</h2></div>
+    <p class="lead">Built connects lenders, owners, developers, general contractors, and subcontractors around the construction loan lifecycle — draws, inspections, lien waivers, and payments. Money movement is core to the product, but today’s payment rails are provided through a third-party B2B payments partner. This sprint evaluates re-platforming that money movement onto Stripe to own the economics, accelerate draws, and embed financial accounts and cards directly in Built.</p>
+
+    <div class="cols">
+      <div class="card">
+        <p class="tagline">What Built does today (public)</p>
+        <h4>The system of record for construction finance</h4>
+        <p>~10% of US construction spend and $300B+ of projects run through the platform: loan administration, draw management, inspections, lien-waiver and compliance workflows, contractor invoicing, and an AI Draw Agent that automates draw review.</p>
+      </div>
+      <div class="card">
+        <p class="tagline">Why revisit the payment layer</p>
+        <h4>Own the money, not just the workflow</h4>
+        <p>Payments routed through a partner means thin economics, limited control over fund timing, and a ceiling on embedded-finance products (accounts, cards, financing). Owning the rails turns a cost line into a revenue line and unlocks faster, conditional disbursement.</p>
+      </div>
+    </div>
+
+    <h3>What this sprint delivers</h3>
+    <ul class="tight">
+      <li><b>A target architecture</b> mapping Built’s money flows to a specific Stripe product stack, with rationale.</li>
+      <li><b>The draw-disbursement money-flow model</b> — including escrow-style holds, retainage, and lien-waiver gating.</li>
+      <li><b>The decisions that carry liability</b> — Connect model, fund custody, licensing posture, onboarding, tax.</li>
+      <li><b>A risk register</b> of the failure modes that actually bite in production money movement.</li>
+      <li><b>A phased roadmap</b> and an illustrative business case sized to justify the build.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 01 CURRENT STATE -->
+<section>
+  <div class="wrap">
+    <div class="sn"><span class="num">01</span><h2>Current state &amp; the problem to solve</h2></div>
+    <p class="lead">Construction payments are unusually hard: funds originate from a lender’s loan, flow down a chain of GCs and subs, and every release is <em>conditional</em> on inspections and signed lien waivers. Retainage (a withheld percentage) is held until completion. Payees are thousands of small contractors who must be onboarded, verified, and 1099-reported. The architecture has to model conditional, multi-party, partially-held money — not a simple charge.</p>
+
+    <div class="cols">
+      <div class="card">
+        <p class="tagline">Constraints to honor</p>
+        <h4>Non-negotiables from the domain</h4>
+        <p>Funds must not release until a lien waiver is executed and inspection passes; retainage must be withheld and released later; joint-check / dual-obligee scenarios exist; full auditability is required (Built runs SOC 1 / SOC 2 Type II).</p>
+      </div>
+      <div class="card">
+        <p class="tagline">Target outcomes</p>
+        <h4>What “better” looks like</h4>
+        <p>Same-day disbursement to subs; embedded financial accounts per project; virtual cards for material purchases against an approved draw; programmatic release driven by the AI Draw Agent; captured payments economics; clean 1099 reporting.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 02 TARGET ARCHITECTURE -->
+<section>
+  <div class="wrap">
+    <div class="sn"><span class="num">02</span><h2>Target architecture — the Stripe stack</h2></div>
+    <p class="lead">Built becomes a <b>Connect platform</b>. Lenders, GCs, and subs are connected accounts. Per-project <b>Treasury</b> financial accounts hold committed draw funds and enforce conditional release. <b>Issuing</b> turns approved draws into spend-controlled cards. Enablers (Identity, Financial Connections, Radar, Tax) run across the whole flow.</p>
+
+    <div class="ptable">
+      <div class="prow">
+        <div class="pl"><span class="chip f-pay" data-r="suite">Connect</span></div>
+        <div class="pr">The spine. Orchestrates multi-party money movement and onboards lenders, GCs, and subcontractors as connected accounts with their own payout rails and KYC state.</div>
+      </div>
+      <div class="prow">
+        <div class="pl"><span class="chip f-bank" data-r="primitive">Treasury</span></div>
+        <div class="pr">A financial account per project (or per loan) holds the funded draw. Funds sit “committed but undisbursed,” enabling escrow-style conditional release and retainage holds rather than instant pass-through.</div>
+      </div>
+      <div class="prow">
+        <div class="pl"><span class="chip f-bank" data-r="primitive">Issuing</span></div>
+        <div class="pr">Virtual (and physical) cards issued against an approved draw line, with spend controls tied to budget categories — so a GC can buy materials without a separate cash advance.</div>
+      </div>
+      <div class="prow">
+        <div class="pl"><span class="chip f-bank" data-r="primitive">Global Payouts</span></div>
+        <div class="pr">Pays subs and vendors via ACH or instant rails from the project account, domestically and cross-border for suppliers.</div>
+      </div>
+      <div class="prow">
+        <div class="pl"><span class="chip f-enable" data-r="devtool">Identity</span> &nbsp; <span class="chip f-enable" data-r="devtool">Financial Connections</span></div>
+        <div class="pr">KYB/KYC for contractor onboarding and bank-account verification — both to fund accounts (debits) and to pay out to verified accounts (anti-fraud).</div>
+      </div>
+      <div class="prow">
+        <div class="pl"><span class="chip f-enable">Radar</span></div>
+        <div class="pr">Screens inbound funding and — critically here — payout/redirect fraud, where a bad actor diverts a subcontractor payment.</div>
+      </div>
+      <div class="prow">
+        <div class="pl"><span class="chip f-rev">Tax (1099)</span> &nbsp; <span class="chip f-rev" data-r="devtool">Sigma</span></div>
+        <div class="pr">Connect tax reporting generates contractor 1099s; Sigma/Data Pipeline feed reconciliation, audit, and the portfolio analytics Built already sells.</div>
+      </div>
+      <div class="prow">
+        <div class="pl"><span class="chip f-ai" data-r="suite">Agentic / programmatic</span></div>
+        <div class="pr">The AI Draw Agent calls the transfer/payout APIs to release funds the moment conditions are met — with human-in-the-loop controls and hard limits.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 03 MONEY FLOW -->
+<section>
+  <div class="wrap">
+    <div class="sn"><span class="num">03</span><h2>The draw-disbursement money flow</h2></div>
+    <p class="lead">The signature of this architecture is conditional, staged release. Money is funded into a held project account, gated on lien waiver + inspection, then split down the contractor chain — with retainage withheld for later.</p>
+
+    <div class="flow">
+      <div class="stage">
+        <div class="stage__k">Stage 1<b>Capital in</b></div>
+        <div class="node">
+          <div class="box">Lender loan funds<small>source of capital</small></div>
+          <span class="ar">→</span>
+          <span class="chip f-enable" data-r="devtool">Financial Connections</span>
+          <span class="ar">→</span>
+          <div class="box">Project financial account<small>Treasury · held</small></div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="stage__k">Stage 2<b>Held in escrow</b></div>
+        <div class="node">
+          <div class="box">Committed draw balance<small>Treasury account / project</small></div>
+          <div class="branch">
+            <p class="small"><b>Retainage</b> (e.g. 5–10%) held back in-account until completion sign-off — never released in the main draw.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="stage__k">Stage 3<b>The gate</b></div>
+        <div class="node">
+          <span class="gate">CONDITIONAL RELEASE<small>lien waiver signed + inspection passed</small></span>
+          <span class="ar">→</span>
+          <span class="chip f-ai" data-r="suite">AI Draw Agent triggers release</span>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="stage__k">Stage 4<b>Disbursement</b></div>
+        <div class="node">
+          <div class="box">GC connected account<small>Connect · transfer</small></div>
+          <span class="ar">→</span>
+          <div class="box">Subcontractors<small>Connect payouts · ACH/instant</small></div>
+          <span class="ar">+</span>
+          <span class="chip f-bank" data-r="primitive">Issuing</span>
+          <span class="box" style="border-style:dashed">Material-purchase cards<small>spend-controlled</small></span>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="stage__k">Stage 5<b>Compliance &amp; close</b></div>
+        <div class="node">
+          <span class="chip f-enable">Radar</span>
+          <span class="chip f-rev">1099 tracking</span>
+          <span class="chip f-rev" data-r="devtool">Reconciliation (Sigma / Data Pipeline)</span>
+          <span class="box">Lien waiver recorded → audit trail</span>
+        </div>
+      </div>
+    </div>
+    <p class="small" style="margin-top:14px">Radar and reconciliation are drawn at Stage 5 for clarity, but operate continuously across every stage. Every release is event-driven off verified webhooks, never off a UI action alone.</p>
+  </div>
+</section>
+
+<!-- 04 DECISIONS -->
+<section>
+  <div class="wrap">
+    <div class="sn"><span class="num">04</span><h2>The decisions that carry liability</h2></div>
+    <p class="lead">These are the choices a senior architect is actually paid to make. Each one shifts where risk, money, and regulatory burden sit.</p>
+
+    <div class="decision">
+      <h4>Fund-flow model: hold-then-transfer, not pass-through</h4>
+      <p class="verdict">Recommendation · Treasury account + separate charges &amp; transfers</p>
+      <p>Because release is conditional and retainage must be withheld, funds cannot simply pass through on receipt. Capital is funded into a held Treasury balance per project; transfers to GC/sub connected accounts are issued only when the gate clears. This is what makes “escrow-like” behavior real instead of a UI illusion.</p>
+    </div>
+
+    <div class="decision">
+      <h4>Custody &amp; licensing posture: keep Built off the money-transmission hook</h4>
+      <p class="verdict">Recommendation · Stripe (and its bank partners) as regulated party</p>
+      <p>Holding and moving other parties’ funds raises money-transmission and custody questions. Routing custody through Stripe Connect + Treasury keeps the regulated, licensed entity outside Built wherever possible — a primary reason to buy rather than build. This posture must be confirmed with counsel before launch; the architecture is designed to support that conclusion, not to assert it.</p>
+    </div>
+
+    <div class="decision">
+      <h4>Onboarding: progressive KYB for thousands of small subs</h4>
+      <p class="verdict">Recommendation · Connect onboarding + Identity, tiered by payout size</p>
+      <p>The biggest adoption risk isn’t code — it’s friction. Collect the minimum to receive a first payout, then escalate verification as cumulative payouts cross thresholds. Pre-verify bank accounts with Financial Connections to cut the dominant construction fraud vector: redirected payouts.</p>
+    </div>
+
+    <div class="decision">
+      <h4>Cards vs cash: Issuing for material spend</h4>
+      <p class="verdict">Recommendation · virtual cards against the approved draw line</p>
+      <p>Issuing spend-controlled cards against a draw category lets a GC buy materials immediately, keeps the spend inside Built’s ledger, and earns interchange — converting a payments cost center into margin while improving the contractor’s cash timing.</p>
+    </div>
+
+    <div class="decision">
+      <h4>Tax: treat 1099 reporting as a first-class output</h4>
+      <p class="verdict">Recommendation · Connect tax reporting from day one</p>
+      <p>Construction generates heavy 1099-NEC volume. Wiring tax reporting in at the start (not bolting it on later) avoids a painful year-end retrofit and is a tangible selling point to lenders and GCs.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 05 RISK REGISTER -->
+<section>
+  <div class="wrap">
+    <div class="sn"><span class="num">05</span><h2>Risk register — the production landmines</h2></div>
+    <p class="lead">The failure modes that separate a demo from a system that moves real money safely. Each is paired with the mitigation baked into the architecture.</p>
+
+    <div class="risk">
+      <div class="risk__top"><span class="risk__name">Webhook-driven release</span><span class="sev hi">High</span></div>
+      <p><b>Risk:</b> releasing funds off a UI action or a browser redirect that can be replayed, dropped, or reordered. <b>Mitigation:</b> every disbursement is triggered only by signature-verified, idempotent webhook handlers; the ledger — not the UI — is the source of truth.</p>
+    </div>
+    <div class="risk">
+      <div class="risk__top"><span class="risk__name">Double disbursement</span><span class="sev hi">High</span></div>
+      <p><b>Risk:</b> a retried request pays a sub twice — unrecoverable once funds leave. <b>Mitigation:</b> idempotency keys on every transfer/payout, keyed to the draw line item.</p>
+    </div>
+    <div class="risk">
+      <div class="risk__top"><span class="risk__name">Payout redirection fraud</span><span class="sev hi">High</span></div>
+      <p><b>Risk:</b> a bad actor changes a subcontractor’s bank details and diverts a payment — endemic in construction. <b>Mitigation:</b> Financial Connections bank verification, change-of-bank cooldowns and re-verification, Radar signals on payout anomalies.</p>
+    </div>
+    <div class="risk">
+      <div class="risk__top"><span class="risk__name">Negative balances &amp; clawbacks</span><span class="sev med">Medium</span></div>
+      <p><b>Risk:</b> a reversed funding or disputed draw leaves a connected account negative. <b>Mitigation:</b> hold-then-transfer model limits exposure; define negative-balance liability and top-up flows in the Connect configuration up front.</p>
+    </div>
+    <div class="risk">
+      <div class="risk__top"><span class="risk__name">Reconciliation drift</span><span class="sev med">Medium</span></div>
+      <p><b>Risk:</b> balances that don’t tie out across Treasury, transfers, retainage, and the loan ledger. <b>Mitigation:</b> integer minor-unit math, a double-entry internal ledger reconciled to Stripe via Data Pipeline, daily tie-out reports in Sigma.</p>
+    </div>
+    <div class="risk">
+      <div class="risk__top"><span class="risk__name">API version drift</span><span class="sev med">Medium</span></div>
+      <p><b>Risk:</b> a Stripe version upgrade silently changes behavior in a money path. <b>Mitigation:</b> pin the API version, gate upgrades behind a replay test suite covering refunds, retainage release, disputes, and partial draws.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 06 ROADMAP -->
+<section>
+  <div class="wrap">
+    <div class="sn"><span class="num">06</span><h2>Phased roadmap</h2></div>
+    <p class="lead">Sequenced by blast radius: validate the regulated foundation first, ship the contained win early, climb to embedded finance on proof. Timeline is indicative for a dedicated build team.</p>
+
+    <div class="phase">
+      <div class="phase__h"><b>Phase 0</b><span>Weeks 1–4</span></div>
+      <div class="phase__b">Architecture validation and compliance review with counsel. Confirm licensing posture, Connect account types, and fund-custody model in a sandbox. Build the reconciliation ledger spec. <span class="small">Exit: signed-off design + test-mode money flow.</span></div>
+    </div>
+    <div class="phase">
+      <div class="phase__h"><b>Phase 1</b><span>Weeks 5–12</span></div>
+      <div class="phase__b">Contractor payouts on Connect — onboarding, KYB, verified bank payouts for a single lender pilot. The contained, provable win.
+        <div class="chips"><span class="chip f-pay" data-r="suite">Connect</span><span class="chip f-enable" data-r="devtool">Identity</span><span class="chip f-enable" data-r="devtool">Financial Connections</span><span class="chip f-enable">Radar</span></div>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="phase__h"><b>Phase 2</b><span>Weeks 10–20</span></div>
+      <div class="phase__b">Treasury project accounts: held draws, conditional release gated on lien waiver + inspection, retainage withholding.
+        <div class="chips"><span class="chip f-bank" data-r="primitive">Treasury</span><span class="chip f-rev">Tax (1099)</span></div>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="phase__h"><b>Phase 3</b><span>Weeks 18–30</span></div>
+      <div class="phase__b">Issuing cards for material spend, then wire the AI Draw Agent to programmatic release with human-in-the-loop limits.
+        <div class="chips"><span class="chip f-bank" data-r="primitive">Issuing</span><span class="chip f-ai" data-r="suite">Agentic release</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 07 BUSINESS CASE -->
+<section>
+  <div class="wrap">
+    <div class="sn"><span class="num">07</span><h2>Illustrative business case</h2></div>
+    <p class="lead">Figures below are <b>modeling placeholders</b> to show the shape of the return, not Built numbers. The point is the order of magnitude: owning the rails turns payments into margin and the sprint fee into a rounding error.</p>
+
+    <div class="metrics">
+      <div class="metric"><div class="v">Days&nbsp;<small>→</small>&nbsp;hours</div><div class="l">Draw-to-disbursement time once release is programmatic and event-driven.</div></div>
+      <div class="metric"><div class="v">+interchange</div><div class="l">New margin on every material-purchase card vs. a zero-revenue pass-through today.</div></div>
+      <div class="metric"><div class="v">≈40×</div><div class="l">Illustrative return on a ~$20k sprint fee vs. first-year captured payments economics at pilot scale.</div></div>
+    </div>
+
+    <p class="small">Value levers: captured payments/interchange revenue, float on held balances where permitted, faster draws (a direct lender/GC selling point), reduced payout fraud loss, and lower ops cost as the AI Draw Agent releases funds without manual cutting of checks. Against this, the Architecture Sprint is a fixed fee in the low five figures — the cheapest, lowest-risk step before any build dollars are committed.</p>
+  </div>
+</section>
+
+<!-- 08 SCOPE -->
+<section>
+  <div class="wrap">
+    <div class="sn"><span class="num">08</span><h2>Assumptions, scope &amp; next step</h2></div>
+    <div class="cols">
+      <div class="card">
+        <p class="tagline">In scope (this sprint)</p>
+        <h4>Architecture &amp; decisions</h4>
+        <p>Target-state design, money-flow model, product selection, liability/compliance posture for counsel review, risk register, phased roadmap, and the business-case frame. Delivered as this document plus a working session.</p>
+      </div>
+      <div class="card">
+        <p class="tagline">Out of scope (this sprint)</p>
+        <h4>Build, legal sign-off, vendor terms</h4>
+        <p>Production code, the binding regulatory/licensing determination (client counsel), commercial terms with Stripe, and data migration. These follow in a separate, fixed-scope build engagement.</p>
+      </div>
+    </div>
+    <h3>Recommended next step</h3>
+    <p class="small">A 90-minute working session to pressure-test the fund-custody model and Phase-0 compliance questions with Built’s payments and legal stakeholders, then convert to a Phase-1 pilot statement of work. The honest path to launch runs through test-mode validation and counsel sign-off before a single live dollar moves — that discipline is the deliverable as much as the diagram is.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>Illustrative architecture sprint · prepared from public information about Built Technologies · not affiliated with or endorsed by Built · no non-public data or individual quotes used · relationships shown are a communication model, not Built’s internal systems · compiled June 21, 2026.</p>
+  </div>
+</footer>
+
+</body>
+</html>

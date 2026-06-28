@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stripe Product Ecosystem — Abstraction Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F6F7FB;
+    --panel:#FFFFFF;
+    --ink:#15172B;
+    --muted:#5B6080;
+    --faint:#8B90AC;
+    --line:#E4E7F2;
+    --line-strong:#CDD2E6;
+    --indigo:#635BFF;
+
+    /* product families */
+    --pay:#635BFF;   /* acceptance & payments */
+    --rev:#0E9384;   /* revenue & data        */
+    --bank:#C2871A;  /* money & banking (BaaS) */
+    --crypto:#E45648;/* crypto & digital assets*/
+    --ai:#8A5CF6;    /* AI & agentic          */
+    --enable:#DD6B1F;/* cross-cutting enablers */
+  }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,sans-serif;
+    line-height:1.55;-webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1120px;margin:0 auto;padding:0 28px}
+
+  .mono{font-family:"IBM Plex Mono",monospace}
+  .eyebrow{
+    font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--indigo);font-weight:500;
+  }
+
+  /* ---------- header ---------- */
+  header{padding:64px 0 38px;border-bottom:1px solid var(--line)}
+  .topline{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:12px}
+  h1{
+    font-family:"Space Grotesk",sans-serif;font-weight:700;
+    font-size:clamp(34px,6vw,62px);line-height:1.02;letter-spacing:-.02em;
+    margin:18px 0 0;max-width:16ch;
+  }
+  h1 em{font-style:normal;color:var(--indigo)}
+  .stand{max-width:62ch;margin:20px 0 0;color:var(--muted);font-size:clamp(15px,1.6vw,17px)}
+  .datechip{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--faint)}
+
+  /* ---------- legend ---------- */
+  .legend{
+    display:grid;grid-template-columns:1fr 1fr;gap:26px;margin:34px 0 0;
+    padding:22px 24px;background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  }
+  .legend h4{
+    margin:0 0 12px;font-family:"IBM Plex Mono",monospace;font-weight:500;
+    font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);
+  }
+  .legrow{display:flex;flex-wrap:wrap;gap:8px 16px}
+  .leg{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--muted)}
+  .leg .mk{font-family:"IBM Plex Mono",monospace;color:var(--ink);width:14px;text-align:center}
+  .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+
+  /* ---------- section scaffolding ---------- */
+  section{padding:54px 0;border-bottom:1px solid var(--line)}
+  .sec-head{display:flex;align-items:baseline;gap:16px;margin:0 0 8px;flex-wrap:wrap}
+  .sec-num{font-family:"IBM Plex Mono",monospace;color:var(--faint);font-size:13px}
+  h2{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:clamp(22px,3vw,30px);letter-spacing:-.01em;margin:0}
+  .sec-sub{color:var(--muted);max-width:70ch;margin:8px 0 30px;font-size:15px}
+
+  /* ---------- chips ---------- */
+  .chip{
+    --c:var(--pay);
+    display:inline-flex;align-items:center;gap:7px;
+    padding:6px 11px 6px 10px;border-radius:9px;
+    font-size:13.5px;font-weight:500;line-height:1.1;
+    color:color-mix(in srgb, var(--c) 72%, #0c0e1d);
+    background:color-mix(in srgb, var(--c) 11%, #fff);
+    border:1px solid color-mix(in srgb, var(--c) 30%, #fff);
+    white-space:nowrap;
+  }
+  .chip::before{
+    content:"◆";font-family:"IBM Plex Mono",monospace;font-size:11px;
+    color:var(--c);transform:translateY(.5px);
+  }
+  .chip[data-role="primitive"]::before{content:"▣"}
+  .chip[data-role="suite"]::before{content:"⧉"}
+  .chip[data-role="devtool"]::before{content:"⚙"}
+  .chip[data-role="component"]::before{content:"◇"}
+  .chip[data-role="protocol"]::before{content:"⬡"}
+  .chip[data-role="suite"]{border-width:1.5px;border-style:double;
+    border-color:color-mix(in srgb, var(--c) 52%, #fff);
+    background:color-mix(in srgb, var(--c) 15%, #fff);font-weight:600}
+  .chip[data-role="devtool"]{border-style:dashed;
+    border-color:color-mix(in srgb, var(--c) 45%, #fff)}
+
+  .f-pay{--c:var(--pay)} .f-rev{--c:var(--rev)} .f-bank{--c:var(--bank)}
+  .f-crypto{--c:var(--crypto)} .f-ai{--c:var(--ai)} .f-enable{--c:var(--enable)}
+
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+
+  /* ---------- the abstraction stack (signature) ---------- */
+  .stack-wrap{display:grid;grid-template-columns:54px 1fr;gap:0}
+  .altitude{position:relative}
+  .altitude .bar{
+    position:absolute;left:22px;top:6px;bottom:6px;width:2px;
+    background:linear-gradient(to top,var(--line-strong),var(--ai));
+  }
+  .altitude .arw{position:absolute;left:16px;top:-2px;color:var(--ai);font-size:14px}
+  .altitude .lo{position:absolute;left:8px;bottom:-2px;writing-mode:vertical-rl;
+    transform:rotate(180deg);font-family:"IBM Plex Mono",monospace;font-size:10.5px;
+    letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+
+  .stack{display:flex;flex-direction:column;gap:10px}
+  .tier{
+    display:grid;grid-template-columns:200px 1fr;gap:18px;align-items:center;
+    background:var(--panel);border:1px solid var(--line);border-radius:13px;
+    padding:16px 18px;position:relative;overflow:hidden;
+  }
+  .tier::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;
+    background:var(--accent,var(--line-strong))}
+  .t-ai{--accent:var(--ai)} .t-suite{--accent:#9aa0c0} .t-surf{--accent:var(--pay)}
+  .t-prod{--accent:var(--rev)} .t-prim{--accent:var(--bank)}
+  .tier__label{padding-left:8px}
+  .tier__k{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:14.5px;margin:0 0 2px}
+  .tier__d{font-size:11.5px;color:var(--faint);font-family:"IBM Plex Mono",monospace}
+  .railnote{
+    grid-column:1 / -1;margin-top:2px;padding:12px 16px;border-radius:11px;
+    border:1px dashed var(--line-strong);background:repeating-linear-gradient(
+      135deg,transparent,transparent 9px,rgba(99,91,255,.04) 9px,rgba(99,91,255,.04) 18px);
+    font-size:13px;color:var(--muted);display:flex;gap:10px;align-items:center
+  }
+  .railnote .mono{color:var(--faint);font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+
+  .crosscut{
+    margin-top:14px;display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;
+    padding:16px 18px;border:1px solid var(--line);border-left:4px solid var(--enable);
+    border-radius:13px;background:var(--panel)
+  }
+  .crosscut .lab{min-width:170px}
+  .crosscut .tier__k{color:var(--enable)}
+
+  /* ---------- lens cards ---------- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:16px}
+  .card{
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:20px;display:flex;flex-direction:column;gap:12px;position:relative
+  }
+  .card__top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .card__name{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:18px;margin:0}
+  .tag{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.1em;
+    text-transform:uppercase;padding:3px 8px;border-radius:20px;border:1px solid var(--line-strong);color:var(--muted)}
+  .card__what{font-size:14px;color:var(--muted);margin:0}
+  .rel{margin-top:auto}
+  .rel__k{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--faint);margin:0 0 8px;display:flex;align-items:center;gap:6px}
+  .arrow{color:var(--indigo)}
+
+  /* ---------- footer ---------- */
+  footer{padding:40px 0 70px}
+  footer p{color:var(--faint);font-size:12.5px;max-width:74ch;font-family:"IBM Plex Mono",monospace;line-height:1.7}
+
+  /* reveal */
+  .reveal{opacity:0;transform:translateY(14px);transition:opacity .6s ease,transform .6s ease}
+  .reveal.in{opacity:1;transform:none}
+
+  @media (max-width:720px){
+    .legend{grid-template-columns:1fr}
+    .tier{grid-template-columns:1fr;gap:10px}
+    .tier__label{padding-left:0}
+    .stack-wrap{grid-template-columns:34px 1fr}
+    .altitude .lo{display:none}
+    .crosscut .lab{min-width:0}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .reveal{opacity:1;transform:none;transition:none}
+    html{scroll-behavior:auto}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="topline">
+      <span class="eyebrow">Stripe · Product Ecosystem</span>
+      <span class="datechip">Compiled June 21, 2026 · 33 products</span>
+    </div>
+    <h1>The shape of <em>the stack</em></h1>
+    <p class="stand">A map of how Stripe's products fit together — which ones are foundational rails, which consume others, which are developer tools that enable building, and which are suites that abstract many products behind a single integration. Products appear wherever they play a role, so several show up more than once.</p>
+
+    <div class="legend">
+      <div>
+        <h4>Role</h4>
+        <div class="legrow">
+          <span class="leg"><span class="mk">▣</span>Primitive / rail</span>
+          <span class="leg"><span class="mk">◆</span>Product</span>
+          <span class="leg"><span class="mk">⧉</span>Suite / abstraction</span>
+          <span class="leg"><span class="mk">⚙</span>Devtool / enabler</span>
+          <span class="leg"><span class="mk">◇</span>Component</span>
+          <span class="leg"><span class="mk">⬡</span>Protocol / token</span>
+        </div>
+      </div>
+      <div>
+        <h4>Family</h4>
+        <div class="legrow">
+          <span class="leg"><span class="sw" style="background:var(--pay)"></span>Payments &amp; acceptance</span>
+          <span class="leg"><span class="sw" style="background:var(--rev)"></span>Revenue &amp; data</span>
+          <span class="leg"><span class="sw" style="background:var(--bank)"></span>Money &amp; banking</span>
+          <span class="leg"><span class="sw" style="background:var(--crypto)"></span>Crypto &amp; digital assets</span>
+          <span class="leg"><span class="sw" style="background:var(--ai)"></span>AI &amp; agentic</span>
+          <span class="leg"><span class="sw" style="background:var(--enable)"></span>Cross-cutting enablers</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ SIGNATURE: ABSTRACTION STACK ============ -->
+<section>
+  <div class="wrap reveal">
+    <div class="sec-head">
+      <span class="sec-num">01</span>
+      <h2>The abstraction stack</h2>
+    </div>
+    <p class="sec-sub">Altitude is abstraction. The higher a layer sits, the more it consumes the layers beneath it. The top layer (agent surfaces) leans on suites, which lean on prebuilt surfaces, which ride the core primitives, which move money over rails and networks.</p>
+
+    <div class="stack-wrap">
+      <div class="altitude" aria-hidden="true">
+        <span class="arw">▲</span><span class="bar"></span>
+        <span class="lo">consumes ↑</span>
+      </div>
+      <div class="stack">
+
+        <div class="tier t-ai">
+          <div class="tier__label">
+            <p class="tier__k">Agent surfaces</p>
+            <p class="tier__d">where agents transact</p>
+          </div>
+          <div class="chips">
+            <span class="chip f-ai" data-role="suite">Agentic Commerce Suite</span>
+            <span class="chip f-ai">Stripe Projects</span>
+            <span class="chip f-ai" data-role="devtool">Checkout studio</span>
+          </div>
+        </div>
+
+        <div class="tier t-suite">
+          <div class="tier__label">
+            <p class="tier__k">Suites &amp; merchant-of-record</p>
+            <p class="tier__d">bundle many products</p>
+          </div>
+          <div class="chips">
+            <span class="chip f-pay" data-role="suite">Managed Payments</span>
+            <span class="chip f-pay" data-role="suite">Optimized Checkout Suite</span>
+            <span class="chip f-pay" data-role="suite">Connect</span>
+          </div>
+        </div>
+
+        <div class="tier t-surf">
+          <div class="tier__label">
+            <p class="tier__k">Prebuilt surfaces</p>
+            <p class="tier__d">ways to take a payment</p>
+          </div>
+          <div class="chips">
+            <span class="chip f-pay">Checkout</span>
+            <span class="chip f-pay">Payment Links</span>
+            <span class="chip f-pay" data-role="devtool">Elements</span>
+            <span class="chip f-pay" data-role="component">Link</span>
+          </div>
+        </div>
+
+        <div class="tier t-prod">
+          <div class="tier__label">
+            <p class="tier__k">Products on the rails</p>
+            <p class="tier__d">consume the primitives</p>
+          </div>
+          <div class="chips">
+            <span class="chip f-rev">Billing</span>
+            <span class="chip f-rev">Invoicing</span>
+            <span class="chip f-rev">Tax</span>
+            <span class="chip f-rev">Revenue Recognition</span>
+            <span class="chip f-enable">Radar</span>
+            <span class="chip f-pay">Terminal</span>
+            <span class="chip f-bank">Capital</span>
+          </div>
+        </div>
+
+        <div class="tier t-prim">
+          <div class="tier__label">
+            <p class="tier__k">Core primitives</p>
+            <p class="tier__d">the building blocks</p>
+          </div>
+          <div class="chips">
+            <span class="chip f-pay" data-role="primitive">Payments</span>
+            <span class="chip f-pay" data-role="primitive">Connect</span>
+            <span class="chip f-bank" data-role="primitive">Treasury</span>
+            <span class="chip f-bank" data-role="primitive">Issuing</span>
+            <span class="chip f-bank" data-role="primitive">Global Payouts</span>
+            <span class="chip f-crypto" data-role="primitive">Crypto</span>
+            <span class="chip f-crypto" data-role="primitive">Digital asset accounts</span>
+          </div>
+          <div class="railnote">
+            <span class="mono">L0 · rails</span>
+            <span>Card networks, bank rails, stablecoin rails, and the Stripe network's data — the ground everything stands on (not Stripe products).</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="crosscut reveal">
+      <div class="lab">
+        <p class="tier__k">Cross-cutting enablers</p>
+        <p class="tier__d mono">feed or serve every layer</p>
+      </div>
+      <div class="chips">
+        <span class="chip f-enable" data-role="devtool">Identity</span>
+        <span class="chip f-enable" data-role="devtool">Financial Connections</span>
+        <span class="chip f-enable">Radar</span>
+        <span class="chip f-rev">Tax</span>
+        <span class="chip f-rev" data-role="devtool">Sigma</span>
+        <span class="chip f-rev" data-role="devtool">Data Pipeline</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ LENS 1: ABSTRACTIONS ============ -->
+<section>
+  <div class="wrap reveal">
+    <div class="sec-head">
+      <span class="sec-num">02</span>
+      <h2>Suites that bundle products</h2>
+    </div>
+    <p class="sec-sub">Abstractions: each of these is a single integration that wraps several lower-level products and hides the wiring between them.</p>
+
+    <div class="grid">
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Managed Payments</h3><span class="tag">Merchant of record</span></div>
+        <p class="card__what">Stripe becomes the seller of record so you can sell globally without owning tax, compliance, or dispute liability.</p>
+        <div class="rel">
+          <p class="rel__k">Bundles <span class="arrow">→</span></p>
+          <div class="chips">
+            <span class="chip f-pay" data-role="primitive">Payments</span>
+            <span class="chip f-rev">Tax</span>
+            <span class="chip f-enable">Radar</span>
+            <span class="chip f-pay">Checkout</span>
+            <span class="chip f-pay" data-role="component">Link</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Agentic Commerce Suite</h3><span class="tag">Sell via agents</span></div>
+        <p class="card__what">One integration to make your catalog discoverable to AI agents and accept agent-initiated payments — instead of building per-agent.</p>
+        <div class="rel">
+          <p class="rel__k">Consumes <span class="arrow">→</span></p>
+          <div class="chips">
+            <span class="chip f-pay">Checkout (Sessions API)</span>
+            <span class="chip f-enable">Radar</span>
+            <span class="chip f-ai" data-role="protocol">Shared Payment Tokens</span>
+            <span class="chip f-pay" data-role="suite">Managed Payments</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Connect</h3><span class="tag">Platform orchestration</span></div>
+        <p class="card__what">Runs multi-party money flows for platforms and marketplaces, and lets them embed Stripe's banking products for their own users.</p>
+        <div class="rel">
+          <p class="rel__k">Orchestrates / embeds <span class="arrow">→</span></p>
+          <div class="chips">
+            <span class="chip f-pay" data-role="primitive">Payments</span>
+            <span class="chip f-bank" data-role="primitive">Issuing</span>
+            <span class="chip f-bank" data-role="primitive">Treasury</span>
+            <span class="chip f-bank">Capital</span>
+            <span class="chip f-enable" data-role="devtool">Identity</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Optimized Checkout Suite</h3><span class="tag">Conversion</span></div>
+        <p class="card__what">A bundle of Stripe's highest-converting payment surfaces and AI optimizations, tuned together rather than wired by hand.</p>
+        <div class="rel">
+          <p class="rel__k">Bundles <span class="arrow">→</span></p>
+          <div class="chips">
+            <span class="chip f-pay">Checkout</span>
+            <span class="chip f-pay" data-role="component">Link</span>
+            <span class="chip f-pay" data-role="component">Adaptive Pricing</span>
+            <span class="chip f-pay" data-role="component">Payment method optimization</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Checkout</h3><span class="tag">Abstraction over Payments</span></div>
+        <p class="card__what">A hosted, prebuilt payment page. It's an abstraction in its own right: turn on other products with little to no extra code.</p>
+        <div class="rel">
+          <p class="rel__k">Consumes &amp; enables <span class="arrow">→</span></p>
+          <div class="chips">
+            <span class="chip f-pay" data-role="primitive">Payments</span>
+            <span class="chip f-rev">Billing</span>
+            <span class="chip f-rev">Tax</span>
+            <span class="chip f-pay" data-role="component">Link</span>
+            <span class="chip f-enable">Radar</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ LENS 2: DEVTOOLS ============ -->
+<section>
+  <div class="wrap reveal">
+    <div class="sec-head">
+      <span class="sec-num">03</span>
+      <h2>Developer tools &amp; enablers</h2>
+    </div>
+    <p class="sec-sub">These don't move money on their own — they help you build, provision, configure, or analyze the products that do.</p>
+
+    <div class="grid">
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Elements</h3><span class="tag">UI toolkit</span></div>
+        <p class="card__what">Drop-in, brandable payment UI components for embedding checkout directly in your own app.</p>
+        <div class="rel"><p class="rel__k">Builds on <span class="arrow">→</span></p>
+          <div class="chips"><span class="chip f-pay" data-role="primitive">Payments</span><span class="chip f-pay" data-role="component">Link</span></div></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Checkout studio</h3><span class="tag">Build &amp; test</span></div>
+        <p class="card__what">Configure, A/B test, and optimize Checkout with an AI assistant and live transaction replay.</p>
+        <div class="rel"><p class="rel__k">Operates on <span class="arrow">→</span></p>
+          <div class="chips"><span class="chip f-pay">Checkout</span></div></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Stripe Projects</h3><span class="tag">Provisioning</span></div>
+        <p class="card__what">Sign up for, buy, and provision third-party infrastructure — hosting, databases, auth, AI — from the command line or a coding agent.</p>
+        <div class="rel"><p class="rel__k">Runs on <span class="arrow">→</span></p>
+          <div class="chips"><span class="chip f-pay" data-role="primitive">Payments</span><span class="chip f-ai" data-role="protocol">Shared Payment Tokens</span></div></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Sigma</h3><span class="tag">Analytics</span></div>
+        <p class="card__what">Query your Stripe data with SQL or natural language to build custom reports in place.</p>
+        <div class="rel"><p class="rel__k">Reads <span class="arrow">→</span></p>
+          <div class="chips"><span class="chip f-rev">All transaction data</span></div></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Data Pipeline</h3><span class="tag">Data sync</span></div>
+        <p class="card__what">Sync your complete Stripe dataset into your own warehouse on a schedule, with no ETL to maintain.</p>
+        <div class="rel"><p class="rel__k">Exports <span class="arrow">→</span></p>
+          <div class="chips"><span class="chip f-rev">All Stripe data</span></div></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Atlas</h3><span class="tag">Entry point</span></div>
+        <p class="card__what">Incorporate a company end to end. It provisions the things the rest of the stack assumes you already have.</p>
+        <div class="rel"><p class="rel__k">Provisions <span class="arrow">→</span></p>
+          <div class="chips"><span class="chip f-pay" data-role="primitive">A Stripe account</span><span class="chip f-bank">Bank account &amp; equity</span></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ LENS 3: CROSS-CUTTING ENABLERS ============ -->
+<section>
+  <div class="wrap reveal">
+    <div class="sec-head">
+      <span class="sec-num">04</span>
+      <h2>Cross-cutting enablers</h2>
+    </div>
+    <p class="sec-sub">Single products that many others depend on. They appear once here, but their reach runs across the whole stack.</p>
+
+    <div class="grid">
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Identity</h3><span class="tag">Trust &amp; KYC</span></div>
+        <p class="card__what">Verifies who someone is. Onboarding and banking products lean on it to meet compliance.</p>
+        <div class="rel"><p class="rel__k">Consumed by <span class="arrow">→</span></p>
+          <div class="chips"><span class="chip f-pay" data-role="suite">Connect</span><span class="chip f-bank" data-role="primitive">Treasury</span><span class="chip f-bank" data-role="primitive">Issuing</span></div></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Financial Connections</h3><span class="tag">Bank data</span></div>
+        <p class="card__what">Links a user's bank account so other products can verify ownership, pull balances, and debit accounts.</p>
+        <div class="rel"><p class="rel__k">Consumed by <span class="arrow">→</span></p>
+          <div class="chips"><span class="chip f-pay" data-role="primitive">Payments (ACH)</span><span class="chip f-bank" data-role="primitive">Treasury</span><span class="chip f-rev">Billing</span><span class="chip f-bank">Capital</span></div></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Radar</h3><span class="tag">Fraud &amp; risk</span></div>
+        <p class="card__what">Scores and blocks risky transactions. Bundled into Payments and reused by everything that takes money.</p>
+        <div class="rel"><p class="rel__k">Consumed by <span class="arrow">→</span></p>
+          <div class="chips"><span class="chip f-pay" data-role="primitive">Payments</span><span class="chip f-pay">Checkout</span><span class="chip f-pay" data-role="suite">Connect</span><span class="chip f-ai" data-role="suite">Agentic Commerce Suite</span><span class="chip f-bank" data-role="primitive">Issuing</span></div></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Tax</h3><span class="tag">Compliance</span></div>
+        <p class="card__what">Calculates, collects, and files tax. Plugs into every surface that creates a charge or an invoice.</p>
+        <div class="rel"><p class="rel__k">Consumed by <span class="arrow">→</span></p>
+          <div class="chips"><span class="chip f-pay">Checkout</span><span class="chip f-rev">Billing</span><span class="chip f-rev">Invoicing</span><span class="chip f-pay">Payment Links</span><span class="chip f-pay" data-role="suite">Managed Payments</span></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ LENS 4: PRIMITIVES ============ -->
+<section>
+  <div class="wrap reveal">
+    <div class="sec-head">
+      <span class="sec-num">05</span>
+      <h2>Primitives &amp; what builds on them</h2>
+    </div>
+    <p class="sec-sub">The foundation. Each is a building block other products consume rather than a finished experience on its own.</p>
+
+    <div class="grid">
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Payments</h3><span class="tag">▣ Primitive</span></div>
+        <p class="card__what">The core charge. Almost everything in acceptance is a layer on top of it.</p>
+        <div class="rel"><p class="rel__k">Built on by <span class="arrow">→</span></p>
+          <div class="chips"><span class="chip f-pay">Checkout</span><span class="chip f-pay">Payment Links</span><span class="chip f-rev">Billing</span><span class="chip f-pay">Terminal</span><span class="chip f-enable">Radar</span></div></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Connect</h3><span class="tag">▣ Primitive</span></div>
+        <p class="card__what">Multi-party money movement. The base for any platform that pays out third parties.</p>
+        <div class="rel"><p class="rel__k">Built on by <span class="arrow">→</span></p>
+          <div class="chips"><span class="chip f-bank">Treasury for platforms</span><span class="chip f-bank">Capital for platforms</span></div></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Treasury</h3><span class="tag">▣ Primitive</span></div>
+        <p class="card__what">Embeddable financial accounts (BaaS). Stores and moves money for a platform's users.</p>
+        <div class="rel"><p class="rel__k">Uses / built on by <span class="arrow">→</span></p>
+          <div class="chips"><span class="chip f-bank" data-role="primitive">Issuing</span><span class="chip f-bank">Treasury for platforms</span></div></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Issuing</h3><span class="tag">▣ Primitive</span></div>
+        <p class="card__what">Programmatic card creation. The card layer beneath spend, expense, and consumer card programs.</p>
+        <div class="rel"><p class="rel__k">Built on by <span class="arrow">→</span></p>
+          <div class="chips"><span class="chip f-bank" data-role="primitive">Treasury</span><span class="chip f-pay" data-role="suite">Connect</span></div></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Crypto &amp; Digital asset accounts</h3><span class="tag">▣ Primitive</span></div>
+        <p class="card__what">Stablecoin and wallet infrastructure (Digital asset accounts built with Privy). Crypto Onramp is a component of Crypto.</p>
+        <div class="rel"><p class="rel__k">Contains <span class="arrow">→</span></p>
+          <div class="chips"><span class="chip f-crypto" data-role="component">Crypto Onramp</span><span class="chip f-crypto" data-role="component">Stablecoin balances</span></div></div>
+      </div>
+
+      <div class="card reveal">
+        <div class="card__top"><h3 class="card__name">Global Payouts</h3><span class="tag">▣ Primitive</span></div>
+        <p class="card__what">Rails to pay recipients in 100+ countries via fiat or stablecoin. The send-money layer under platforms.</p>
+        <div class="rel"><p class="rel__k">Built on by <span class="arrow">→</span></p>
+          <div class="chips"><span class="chip f-pay" data-role="suite">Connect</span></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PROTOCOLS ============ -->
+<section>
+  <div class="wrap reveal">
+    <div class="sec-head">
+      <span class="sec-num">06</span>
+      <h2>Protocols &amp; primitives beneath the agentic layer</h2>
+    </div>
+    <p class="sec-sub">Not standalone products — open or co-authored standards, payment tokens, and capabilities of products above. They're what the agentic suites are built from.</p>
+    <div class="chips">
+      <span class="chip f-ai" data-role="protocol">Agentic Commerce Protocol (ACP)</span>
+      <span class="chip f-ai" data-role="protocol">Machine Payments Protocol (MPP)</span>
+      <span class="chip f-ai" data-role="protocol">Universal Commerce Protocol (UCP)</span>
+      <span class="chip f-ai" data-role="protocol">Shared Payment Tokens (SPTs)</span>
+      <span class="chip f-pay" data-role="component">Link agent wallet</span>
+      <span class="chip f-bank" data-role="component">Issuing for agents</span>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>This is a communication model, not Stripe's internal architecture. "Consumes / built on / bundles" describe how products typically relate from a builder's point of view; exact dependencies vary by integration, and Stripe ships continuously. A product appears in more than one place when it plays more than one role — e.g. Radar is both a product and a cross-cutting enabler; Checkout is both a surface and an abstraction over Payments. Compiled June 21, 2026.</p>
+  </div>
+</footer>
+
+<script>
+  (function(){
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target);} });
+    }, {threshold:0.08, rootMargin:'0px 0px -8% 0px'});
+    document.querySelectorAll('.reveal').forEach(function(el){ io.observe(el); });
+  })();
+</script>
+</body>
+</html>
