@@ -27,8 +27,9 @@ src/
   engine/
     types.ts                   SimEvent, Persona, Role, ComplianceState, all shared types
     event-emitter.ts           emit() — creates and enqueues a SimEvent
-    event-queue.ts             Zustand store: events[], cursor, enqueue(), clear()
-    dvr.ts                     Zustand store: isPlaying, speed, freeze, step controls
+    event-queue.ts             Zustand store: events[] only — no cursor. enqueue() just pushes.
+    dvr.ts                     Zustand store: cursor, currentEvent, isPlaying, speed, freeze. Subscribes to queue.
+    redaction.ts               redactSensitiveFields() — strips PAN/CVC/SSN from request/response before display
     compliance.ts              complianceStates[] → border color + label
     persona.ts                 Zustand store: active persona, swap()
     rbac.ts                    Role → allowed routes map, canAccess()
@@ -94,19 +95,21 @@ tests/
 Task 1 (scaffold)
   └─ Task 2 (types)
        ├─ Task 3 (event-queue)  ─┐
-       ├─ Task 4 (dvr)          ─┼─ Task 11 (layout + border)
-       ├─ Task 5 (compliance)   ─┘     └─ Task 12 (topbar)
-       ├─ Task 6 (persona)                   └─ Task 13 (observatory shell)
-       ├─ Task 7 (rbac) ← Task 6                  ├─ Task 14 (dvr controls UI)
-       ├─ Task 8 (failure modes)                   ├─ Task 15 (object explorer)
-       └─ Task 9 (exam mode)                       └─ Task 16 (store guide)
-                                                         └─ Task 17 (fake flow)
-Task 10 (SSO mock) ← Tasks 6, 7
-Task 18 (CI) ← Task 1
+       ├─ Task 4 (dvr) ← Task 3 ─┼─ Task 12 (layout + border)
+       ├─ Task 5 (compliance)   ─┘     └─ Task 13 (topbar)
+       ├─ Task 6 (redaction)                └─ Task 14 (observatory shell)
+       ├─ Task 7 (persona)                       ├─ Task 15 (dvr controls UI)
+       ├─ Task 8 (rbac) ← Task 7                 ├─ Task 16 (object explorer)
+       ├─ Task 9 (failure modes)                  └─ Task 17 (store guide)
+       └─ Task 10 (exam mode)
+                                           Task 18 (react component tests) ← Task 14
+Task 11 (SSO mock) ← Tasks 7, 8           Task 19 (fake flow) ← Tasks 12-18
+Task 20 (CI) ← Task 1
 ```
 
-Tasks 3, 5, 6, 8, 9 can all run in parallel after Task 2.
-Tasks 14, 15, 16 can all run in parallel after Task 13.
+Parallel after Task 2: Tasks 3, 5, 6, 7, 9, 10.
+Task 4 (DVR) depends on Task 3 (queue) — run sequentially.
+Parallel after Task 14: Tasks 15, 16, 17, 18.
 
 ---
 
@@ -117,12 +120,16 @@ Tasks 14, 15, 16 can all run in parallel after Task 13.
 
 - [ ] **Step 1: Bootstrap Next.js**
 
+Directory already has files (docs, git history). Use a temp dir then merge:
+
 ```bash
 cd /Users/b/Desktop/code/stripey-stripe
-pnpm create next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias "@/*" --use-pnpm
+pnpm create next-app@latest temp-stripe-app --typescript --tailwind --eslint --app --src-dir --import-alias "@/*" --use-pnpm
+rsync -av temp-stripe-app/ ./
+rm -rf temp-stripe-app
 ```
 
-Expected: project files created in current directory.
+Expected: Next.js project files merged into existing directory without overwriting docs/.
 
 - [ ] **Step 2: Install dependencies**
 
@@ -183,7 +190,8 @@ In `tsconfig.json`, ensure:
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "check": "pnpm type-check && pnpm test"
   }
 }
 ```
@@ -240,6 +248,17 @@ Create `src/engine/types.ts`:
 ```typescript
 export type Actor = "user" | "app" | "stripe" | "idp" | "webhook"
 
+export type EventPhase =
+  | "user_action"
+  | "client_call"
+  | "server_call"
+  | "stripe_object"
+  | "webhook"
+  | "db_write"
+  | "compliance_transition"
+
+// actor = WHO did it. phase = WHAT KIND of system event it is.
+
 export type ComplianceState = "idle" | "pii" | "pci" | "kyc_aml" | "crypto" | "banking"
 
 export type SimulationLevel = "real_api" | "real_hosted" | "simulated" | "conceptual"
@@ -282,8 +301,11 @@ export interface StoreGuidance {
 
 export interface SimEvent {
   id: string
+  flowId?: string        // which demo flow this event belongs to (for exam mode)
+  stepId?: string        // logical step within the flow (for cert tips lookup)
   timestamp: string
   actor: Actor
+  phase: EventPhase      // what kind of system event (actor = who, phase = what kind)
   source: string
   action: string
   stripeObject?: string
@@ -346,7 +368,7 @@ export interface StripeObjectExample {
 Create `tests/engine/types.test.ts`:
 ```typescript
 import { describe, it, expectTypeOf } from 'vitest'
-import type { SimEvent, Persona, ComplianceState, Actor } from '@/engine/types'
+import type { SimEvent, Persona, ComplianceState, Actor, EventPhase } from '@/engine/types'
 
 describe('SimEvent', () => {
   it('requires complianceStates array', () => {
@@ -355,6 +377,15 @@ describe('SimEvent', () => {
 
   it('actor is a union', () => {
     expectTypeOf<SimEvent['actor']>().toEqualTypeOf<Actor>()
+  })
+
+  it('phase is required and is EventPhase union', () => {
+    expectTypeOf<SimEvent['phase']>().toEqualTypeOf<EventPhase>()
+  })
+
+  it('flowId and stepId are optional strings', () => {
+    expectTypeOf<SimEvent['flowId']>().toEqualTypeOf<string | undefined>()
+    expectTypeOf<SimEvent['stepId']>().toEqualTypeOf<string | undefined>()
   })
 
   it('optional fields are optional', () => {
@@ -397,6 +428,8 @@ git commit -m "feat(engine): add SimEvent type system"
 **Consumes:** `SimEvent` from `@/engine/types`
 **Produces:** `useEventQueue()`, `emit()`
 
+The queue stores events only. It does NOT manage the cursor — that is the DVR's job. `enqueue()` pushes and notifies DVR via the DVR's subscription (set up in dvr.ts). The queue never imports dvr.ts.
+
 - [ ] **Step 1: Write failing tests**
 
 Create `tests/engine/event-queue.test.ts`:
@@ -410,6 +443,7 @@ const makeEvent = (overrides: Partial<SimEvent> = {}): SimEvent => ({
   id: 'evt_test_1',
   timestamp: '2026-06-29T00:00:00Z',
   actor: 'user',
+  phase: 'user_action',
   source: 'test',
   action: 'test action',
   complianceStates: ['idle'],
@@ -419,57 +453,43 @@ const makeEvent = (overrides: Partial<SimEvent> = {}): SimEvent => ({
 
 describe('useEventQueue', () => {
   beforeEach(() => {
-    const { result } = renderHook(() => useEventQueue())
-    act(() => result.current.clear())
+    useEventQueue.getState().clear()
   })
 
-  it('starts empty with cursor at -1', () => {
+  it('starts empty', () => {
     const { result } = renderHook(() => useEventQueue())
     expect(result.current.events).toHaveLength(0)
-    expect(result.current.cursor).toBe(-1)
   })
 
-  it('enqueue adds event and advances cursor', () => {
+  it('enqueue adds event to events array', () => {
     const { result } = renderHook(() => useEventQueue())
     act(() => result.current.enqueue(makeEvent()))
     expect(result.current.events).toHaveLength(1)
-    expect(result.current.cursor).toBe(0)
   })
 
-  it('enqueue multiple events advances cursor to last', () => {
+  it('enqueue multiple events adds all to array', () => {
     const { result } = renderHook(() => useEventQueue())
     act(() => {
       result.current.enqueue(makeEvent({ id: 'evt_1' }))
       result.current.enqueue(makeEvent({ id: 'evt_2' }))
     })
-    expect(result.current.cursor).toBe(1)
+    expect(result.current.events).toHaveLength(2)
   })
 
-  it('clear resets to empty and cursor -1', () => {
+  it('clear resets to empty', () => {
     const { result } = renderHook(() => useEventQueue())
     act(() => {
       result.current.enqueue(makeEvent())
       result.current.clear()
     })
     expect(result.current.events).toHaveLength(0)
-    expect(result.current.cursor).toBe(-1)
   })
 
-  it('currentEvent returns event at cursor', () => {
+  it('enqueue does NOT manage cursor — queue has no cursor', () => {
+    // Queue exposes no cursor field. Cursor lives in DVR.
     const { result } = renderHook(() => useEventQueue())
-    const evt = makeEvent()
-    act(() => result.current.enqueue(evt))
-    expect(result.current.currentEvent).toEqual(evt)
-  })
-
-  it('setCursor clamps to valid range', () => {
-    const { result } = renderHook(() => useEventQueue())
-    act(() => {
-      result.current.enqueue(makeEvent({ id: 'evt_1' }))
-      result.current.enqueue(makeEvent({ id: 'evt_2' }))
-      result.current.setCursor(999)
-    })
-    expect(result.current.cursor).toBe(1)
+    act(() => result.current.enqueue(makeEvent()))
+    expect((result.current as Record<string, unknown>)['cursor']).toBeUndefined()
   })
 })
 ```
@@ -491,40 +511,26 @@ import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import type { SimEvent } from './types'
 
+// Queue stores events only. Cursor lives in DVR.
+// DVR subscribes to this store and decides cursor movement.
 interface EventQueueState {
   events: SimEvent[]
-  cursor: number
-  currentEvent: SimEvent | undefined
   enqueue: (event: SimEvent) => void
   clear: () => void
-  setCursor: (index: number) => void
 }
 
 export const useEventQueue = create<EventQueueState>()(
-  immer((set, get) => ({
+  immer((set) => ({
     events: [],
-    cursor: -1,
-    currentEvent: undefined,
 
     enqueue: (event) =>
       set((state) => {
         state.events.push(event)
-        state.cursor = state.events.length - 1
-        state.currentEvent = event
       }),
 
     clear: () =>
       set((state) => {
         state.events = []
-        state.cursor = -1
-        state.currentEvent = undefined
-      }),
-
-    setCursor: (index) =>
-      set((state) => {
-        const clamped = Math.max(-1, Math.min(index, state.events.length - 1))
-        state.cursor = clamped
-        state.currentEvent = clamped >= 0 ? state.events[clamped] : undefined
       }),
   }))
 )
@@ -539,7 +545,7 @@ import type { SimEvent } from './types'
 
 let counter = 0
 
-export function emit(partial: Omit<SimEvent, 'id' | 'timestamp'>): SimEvent {
+export function emit(partial: Omit<SimEvent, 'id' | 'timestamp'> & { phase: SimEvent['phase'] }): SimEvent {
   counter += 1
   const event: SimEvent = {
     ...partial,
@@ -577,42 +583,45 @@ git commit -m "feat(engine): add event queue store and emit helper"
 **Consumes:** `useEventQueue` from `@/engine/event-queue`, `PlaybackSpeed` from `@/engine/types`
 **Produces:** `useDVR()`
 
+DVR owns `cursor` and `currentEvent`. It subscribes to `useEventQueue.events` on module load. When a new event is enqueued: if cursor is -1, advance to 0 (first event); if playing and not frozen, advance to latest; if paused or frozen, hold. The queue never imports dvr — one-way dependency.
+
 - [ ] **Step 1: Write failing tests**
 
 Create `tests/engine/dvr.test.ts`:
 ```typescript
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useDVR } from '@/engine/dvr'
 import { useEventQueue } from '@/engine/event-queue'
 import { emit } from '@/engine/event-emitter'
 
-beforeEach(() => {
-  useEventQueue.getState().clear()
-  useDVR.getState().pause()
-  useDVR.setState({ isFrozen: false, speed: 1 })
+const makePartial = (overrides = {}) => ({
+  actor: 'user' as const,
+  phase: 'user_action' as const,
+  source: 'test',
+  action: 'test',
+  complianceStates: ['idle'] as const,
+  simulationLevel: 'simulated' as const,
+  ...overrides,
 })
 
-describe('useDVR', () => {
-  it('starts paused and unfrozen', () => {
+beforeEach(() => {
+  useEventQueue.getState().clear()
+  useDVR.setState({ cursor: -1, currentEvent: undefined, isPlaying: false, isFrozen: false, speed: 1 })
+})
+
+describe('useDVR — playback controls', () => {
+  it('starts paused, unfrozen, cursor -1', () => {
     const { result } = renderHook(() => useDVR())
     expect(result.current.isPlaying).toBe(false)
     expect(result.current.isFrozen).toBe(false)
+    expect(result.current.cursor).toBe(-1)
   })
 
   it('play sets isPlaying true', () => {
     const { result } = renderHook(() => useDVR())
     act(() => result.current.play())
     expect(result.current.isPlaying).toBe(true)
-  })
-
-  it('pause sets isPlaying false', () => {
-    const { result } = renderHook(() => useDVR())
-    act(() => {
-      result.current.play()
-      result.current.pause()
-    })
-    expect(result.current.isPlaying).toBe(false)
   })
 
   it('freeze locks both play state and isFrozen', () => {
@@ -622,27 +631,66 @@ describe('useDVR', () => {
     expect(result.current.isPlaying).toBe(false)
   })
 
-  it('stepForward advances cursor by 1', () => {
-    emit({ actor: 'user', source: 'test', action: 'a', complianceStates: ['idle'], simulationLevel: 'simulated' })
-    emit({ actor: 'app', source: 'test', action: 'b', complianceStates: ['pci'], simulationLevel: 'simulated' })
-    useEventQueue.getState().setCursor(0)
-    const { result } = renderHook(() => useDVR())
-    act(() => result.current.stepForward())
-    expect(useEventQueue.getState().cursor).toBe(1)
-  })
-
-  it('stepBack decrements cursor by 1', () => {
-    emit({ actor: 'user', source: 'test', action: 'a', complianceStates: ['idle'], simulationLevel: 'simulated' })
-    emit({ actor: 'app', source: 'test', action: 'b', complianceStates: ['pci'], simulationLevel: 'simulated' })
-    const { result } = renderHook(() => useDVR())
-    act(() => result.current.stepBack())
-    expect(useEventQueue.getState().cursor).toBe(0)
-  })
-
   it('setSpeed changes speed', () => {
     const { result } = renderHook(() => useDVR())
     act(() => result.current.setSpeed(2))
     expect(result.current.speed).toBe(2)
+  })
+})
+
+describe('useDVR — cursor management (the DVR learning model)', () => {
+  it('first enqueue always shows the event (cursor -1 → 0), even when paused', () => {
+    // paused by default
+    act(() => emit(makePartial({ id: 'evt_1' })))
+    expect(useDVR.getState().cursor).toBe(0)
+    expect(useDVR.getState().currentEvent?.id).toMatch('evt_1')
+  })
+
+  it('enqueue does NOT advance cursor when paused and cursor already set', () => {
+    act(() => emit(makePartial({ id: 'evt_1' })))  // cursor → 0
+    act(() => emit(makePartial({ id: 'evt_2' })))  // paused: cursor stays 0
+    expect(useDVR.getState().cursor).toBe(0)
+    expect(useDVR.getState().currentEvent?.id).toMatch('evt_1')
+  })
+
+  it('enqueue advances cursor to latest when playing', () => {
+    useDVR.setState({ isPlaying: true, isFrozen: false })
+    act(() => emit(makePartial({ id: 'evt_1' })))
+    act(() => emit(makePartial({ id: 'evt_2' })))
+    expect(useDVR.getState().cursor).toBe(1)
+    expect(useDVR.getState().currentEvent?.id).toMatch('evt_2')
+  })
+
+  it('freeze prevents cursor movement even when isPlaying was true', () => {
+    useDVR.setState({ isPlaying: true, isFrozen: true })
+    act(() => emit(makePartial({ id: 'evt_1' })))  // cursor → 0 (first event)
+    act(() => emit(makePartial({ id: 'evt_2' })))  // frozen: stays at 0
+    expect(useDVR.getState().cursor).toBe(0)
+  })
+
+  it('stepForward advances cursor by 1', () => {
+    act(() => emit(makePartial({ id: 'evt_1' })))
+    act(() => emit(makePartial({ id: 'evt_2' })))
+    // cursor is at 0 (paused after first event)
+    const { result } = renderHook(() => useDVR())
+    act(() => result.current.stepForward())
+    expect(result.current.cursor).toBe(1)
+  })
+
+  it('stepBack decrements cursor by 1', () => {
+    act(() => emit(makePartial({ id: 'evt_1' })))
+    act(() => emit(makePartial({ id: 'evt_2' })))
+    useDVR.setState({ cursor: 1, currentEvent: useEventQueue.getState().events[1] })
+    const { result } = renderHook(() => useDVR())
+    act(() => result.current.stepBack())
+    expect(result.current.cursor).toBe(0)
+  })
+
+  it('clear resets cursor to -1', () => {
+    act(() => emit(makePartial({ id: 'evt_1' })))
+    act(() => useEventQueue.getState().clear())
+    expect(useDVR.getState().cursor).toBe(-1)
+    expect(useDVR.getState().currentEvent).toBeUndefined()
   })
 })
 ```
@@ -662,10 +710,12 @@ Create `src/engine/dvr.ts`:
 "use client"
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
-import type { PlaybackSpeed } from './types'
+import type { PlaybackSpeed, SimEvent } from './types'
 import { useEventQueue } from './event-queue'
 
 interface DVRState {
+  cursor: number
+  currentEvent: SimEvent | undefined
   isPlaying: boolean
   isFrozen: boolean
   speed: PlaybackSpeed
@@ -682,7 +732,9 @@ interface DVRState {
 }
 
 export const useDVR = create<DVRState>()(
-  immer((set) => ({
+  immer((set, get) => ({
+    cursor: -1,
+    currentEvent: undefined,
     isPlaying: false,
     isFrozen: false,
     speed: 1,
@@ -698,20 +750,57 @@ export const useDVR = create<DVRState>()(
     }),
 
     stepForward: () => {
-      const q = useEventQueue.getState()
-      q.setCursor(q.cursor + 1)
+      const events = useEventQueue.getState().events
+      const { cursor } = get()
+      const next = Math.min(cursor + 1, events.length - 1)
+      set((s) => { s.cursor = next; s.currentEvent = events[next] })
     },
     stepBack: () => {
-      const q = useEventQueue.getState()
-      q.setCursor(q.cursor - 1)
+      const events = useEventQueue.getState().events
+      const { cursor } = get()
+      const prev = Math.max(cursor - 1, 0)
+      set((s) => { s.cursor = prev; s.currentEvent = events[prev] })
     },
-    jumpToStart: () => useEventQueue.getState().setCursor(0),
+    jumpToStart: () => {
+      const events = useEventQueue.getState().events
+      if (events.length > 0) set((s) => { s.cursor = 0; s.currentEvent = events[0] })
+    },
     jumpToEnd: () => {
-      const q = useEventQueue.getState()
-      q.setCursor(q.events.length - 1)
+      const events = useEventQueue.getState().events
+      if (events.length > 0) {
+        const last = events.length - 1
+        set((s) => { s.cursor = last; s.currentEvent = events[last] })
+      }
     },
   }))
 )
+
+// Subscribe to queue — DVR decides cursor movement.
+// Queue never imports DVR. One-way dependency.
+useEventQueue.subscribe((state, prevState) => {
+  const events = state.events
+
+  if (events.length === 0 && prevState.events.length > 0) {
+    // Queue cleared
+    useDVR.setState({ cursor: -1, currentEvent: undefined })
+    return
+  }
+
+  if (events.length > prevState.events.length) {
+    // New event enqueued
+    const { cursor, isPlaying, isFrozen } = useDVR.getState()
+
+    if (cursor === -1) {
+      // First event ever — always show it regardless of play state
+      useDVR.setState({ cursor: 0, currentEvent: events[0] })
+    } else if (isPlaying && !isFrozen) {
+      // Playing: advance to newest
+      const last = events.length - 1
+      useDVR.setState({ cursor: last, currentEvent: events[last] })
+    }
+    // Paused or frozen: hold cursor, user steps manually
+  }
+})
 ```
 
 - [ ] **Step 4: Run tests**
@@ -738,7 +827,7 @@ git commit -m "feat(engine): add DVR store with step/play/freeze controls"
 - Test: `tests/engine/compliance.test.ts`
 
 **Consumes:** `ComplianceState` from `@/engine/types`
-**Produces:** `COMPLIANCE_CONFIG`, `getComplianceMeta()`, `deriveComplianceColor()`
+**Produces:** `COMPLIANCE_CONFIG`, `getComplianceMeta()`, `deriveComplianceResult()`
 
 - [ ] **Step 1: Write failing tests**
 
@@ -747,38 +836,34 @@ Create `tests/engine/compliance.test.ts`:
 import { describe, it, expect } from 'vitest'
 import { deriveComplianceColor, getComplianceMeta } from '@/engine/compliance'
 
-describe('deriveComplianceColor', () => {
-  it('idle → green', () => {
-    expect(deriveComplianceColor(['idle'])).toBe('#22C55E')
+describe('deriveComplianceResult', () => {
+  it('idle → green, label "Safe / Idle"', () => {
+    const r = deriveComplianceResult(['idle'])
+    expect(r.color).toBe('#22C55E')
+    expect(r.primary).toBe('idle')
+    expect(r.active).toEqual(['idle'])
   })
 
-  it('pci → orange', () => {
-    expect(deriveComplianceColor(['pci'])).toBe('#F97316')
+  it('pci → orange primary', () => {
+    const r = deriveComplianceResult(['pci'])
+    expect(r.color).toBe('#F97316')
+    expect(r.primary).toBe('pci')
   })
 
-  it('pii → yellow', () => {
-    expect(deriveComplianceColor(['pii'])).toBe('#EAB308')
+  it('multiple active states — primary is highest priority, all are in active[]', () => {
+    const r = deriveComplianceResult(['pii', 'pci'])
+    expect(r.primary).toBe('pci')
+    expect(r.color).toBe('#F97316')
+    expect(r.active).toContain('pii')
+    expect(r.active).toContain('pci')
+    expect(r.label).toContain('PCI')
+    expect(r.label).toContain('PII')
   })
 
-  it('kyc_aml → blue', () => {
-    expect(deriveComplianceColor(['kyc_aml'])).toBe('#3B82F6')
-  })
-
-  it('banking → red', () => {
-    expect(deriveComplianceColor(['banking'])).toBe('#EF4444')
-  })
-
-  it('crypto → purple', () => {
-    expect(deriveComplianceColor(['crypto'])).toBe('#A855F7')
-  })
-
-  it('multiple states → first non-idle color (highest priority)', () => {
-    // pci takes priority over pii
-    expect(deriveComplianceColor(['pii', 'pci'])).toBe('#F97316')
-  })
-
-  it('empty → idle green', () => {
-    expect(deriveComplianceColor([])).toBe('#22C55E')
+  it('empty → idle', () => {
+    const r = deriveComplianceResult([])
+    expect(r.color).toBe('#22C55E')
+    expect(r.primary).toBe('idle')
   })
 })
 
@@ -873,21 +958,38 @@ export function getComplianceMeta(state: ComplianceState): ComplianceMeta {
   return COMPLIANCE_CONFIG[state]
 }
 
-export function deriveComplianceColor(states: ComplianceState[]): string {
-  if (states.length === 0) return COMPLIANCE_CONFIG.idle.color
-  // Pick highest-priority state
-  let highest: ComplianceState = 'idle'
-  for (const state of states) {
-    if (PRIORITY.indexOf(state) > PRIORITY.indexOf(highest)) {
-      highest = state
-    }
-  }
-  return COMPLIANCE_CONFIG[highest].color
+export interface ComplianceResult {
+  primary: ComplianceState  // highest-priority state (drives border color)
+  color: string             // border color for primary
+  active: ComplianceState[] // all active states (drives label + gradient later)
+  label: string             // human-readable combined label
+  metas: ComplianceMeta[]   // full meta for all active states
 }
 
-export function deriveActiveMeta(states: ComplianceState[]): ComplianceMeta[] {
-  if (states.length === 0) return [COMPLIANCE_CONFIG.idle]
-  return states.map((s) => COMPLIANCE_CONFIG[s])
+export function deriveComplianceResult(states: ComplianceState[]): ComplianceResult {
+  const active = states.length === 0 ? ['idle' as ComplianceState] : [...states]
+
+  // Pick highest-priority state for the border color
+  let primary: ComplianceState = 'idle'
+  for (const state of active) {
+    if (PRIORITY.indexOf(state) > PRIORITY.indexOf(primary)) {
+      primary = state
+    }
+  }
+
+  const metas = active.map((s) => COMPLIANCE_CONFIG[s])
+  const nonIdle = active.filter((s) => s !== 'idle')
+  const label = nonIdle.length === 0
+    ? 'Safe / Idle'
+    : nonIdle.map((s) => COMPLIANCE_CONFIG[s].label).join(' + ')
+
+  return {
+    primary,
+    color: COMPLIANCE_CONFIG[primary].color,
+    active,
+    label,
+    metas,
+  }
 }
 ```
 
@@ -908,7 +1010,119 @@ git commit -m "feat(engine): add compliance state machine"
 
 ---
 
-## Task 6: Persona Store + Fake JWT
+## Task 6: Redaction Helper
+
+**Files:**
+- Create: `src/engine/redaction.ts`
+- Test: `tests/engine/redaction.test.ts`
+
+**Produces:** `redactSensitiveFields(value: unknown): unknown`
+
+Teaches the right habit: even in fake data, never log sensitive-looking field names. Used by ApiLogTab before rendering request/response.
+
+- [ ] **Step 1: Write failing tests**
+
+Create `tests/engine/redaction.test.ts`:
+```typescript
+import { describe, it, expect } from 'vitest'
+import { redactSensitiveFields } from '@/engine/redaction'
+
+describe('redactSensitiveFields', () => {
+  it('redacts card number fields', () => {
+    const result = redactSensitiveFields({ number: '4242424242424242', amount: 100 })
+    expect((result as Record<string, unknown>).number).toBe('[REDACTED]')
+    expect((result as Record<string, unknown>).amount).toBe(100)
+  })
+
+  it('redacts cvc', () => {
+    const result = redactSensitiveFields({ cvc: '123' })
+    expect((result as Record<string, unknown>).cvc).toBe('[REDACTED]')
+  })
+
+  it('redacts nested sensitive fields', () => {
+    const result = redactSensitiveFields({ card: { number: '4242', cvc: '123', exp_month: 12 } })
+    const card = (result as Record<string, unknown>).card as Record<string, unknown>
+    expect(card.number).toBe('[REDACTED]')
+    expect(card.cvc).toBe('[REDACTED]')
+    expect(card.exp_month).toBe('[REDACTED]')
+  })
+
+  it('redacts ssn and tax_id', () => {
+    const result = redactSensitiveFields({ ssn: '123-45-6789', tax_id: 'EIN123' })
+    expect((result as Record<string, unknown>).ssn).toBe('[REDACTED]')
+    expect((result as Record<string, unknown>).tax_id).toBe('[REDACTED]')
+  })
+
+  it('passes through non-sensitive primitives', () => {
+    expect(redactSensitiveFields('hello')).toBe('hello')
+    expect(redactSensitiveFields(42)).toBe(42)
+    expect(redactSensitiveFields(null)).toBeNull()
+  })
+
+  it('handles arrays by redacting each element', () => {
+    const result = redactSensitiveFields([{ number: '4242' }, { amount: 100 }])
+    expect((result as Array<Record<string, unknown>>)[0]?.number).toBe('[REDACTED]')
+    expect((result as Array<Record<string, unknown>>)[1]?.amount).toBe(100)
+  })
+})
+```
+
+- [ ] **Step 2: Run to confirm failure**
+
+```bash
+pnpm test tests/engine/redaction.test.ts
+```
+
+Expected: FAIL
+
+- [ ] **Step 3: Implement**
+
+Create `src/engine/redaction.ts`:
+```typescript
+const SENSITIVE_KEYS = new Set([
+  'number', 'cvc', 'exp_month', 'exp_year',
+  'card', 'pan', 'ssn', 'tax_id', 'dob',
+  'account_number', 'routing_number',
+])
+
+export function redactSensitiveFields(value: unknown): unknown {
+  if (value === null || value === undefined) return value
+  if (typeof value !== 'object') return value
+  if (Array.isArray(value)) return value.map(redactSensitiveFields)
+
+  const obj = value as Record<string, unknown>
+  const result: Record<string, unknown> = {}
+
+  for (const [key, val] of Object.entries(obj)) {
+    if (SENSITIVE_KEYS.has(key)) {
+      result[key] = '[REDACTED]'
+    } else {
+      result[key] = redactSensitiveFields(val)
+    }
+  }
+
+  return result
+}
+```
+
+- [ ] **Step 4: Run tests**
+
+```bash
+pnpm test tests/engine/redaction.test.ts
+```
+
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/engine/redaction.ts tests/engine/redaction.test.ts
+git commit -m "feat(engine): add sensitive field redaction helper"
+```
+
+---
+
+## Task 7: Persona Store + Fake JWT
 
 **Files:**
 - Create: `src/engine/persona.ts`, `src/lib/fake-auth.ts`
@@ -1085,7 +1299,7 @@ git commit -m "feat(engine): add persona store and fake JWT cookie helpers"
 
 ---
 
-## Task 7: RBAC + Middleware
+## Task 8: RBAC + Middleware
 
 **Files:**
 - Create: `src/engine/rbac.ts`, `src/middleware.ts`
@@ -1208,7 +1422,7 @@ git commit -m "feat(engine): add RBAC module and Next.js middleware"
 
 ---
 
-## Task 8: Failure Mode Registry
+## Task 9: Failure Mode Registry
 
 **Files:**
 - Create: `src/engine/failure-modes.ts`
@@ -1229,8 +1443,8 @@ beforeEach(() => {
 })
 
 describe('FAILURE_MODES', () => {
-  it('has all 16 failure modes defined', () => {
-    expect(Object.keys(FAILURE_MODES)).toHaveLength(16)
+  it('has all 17 failure modes defined', () => {
+    expect(Object.keys(FAILURE_MODES)).toHaveLength(17)
   })
 
   it('each mode has label and description', () => {
@@ -1245,13 +1459,13 @@ describe('FAILURE_MODES', () => {
 describe('useFailureModes', () => {
   it('starts with no active modes', () => {
     const { result } = renderHook(() => useFailureModes())
-    expect(result.current.active.size).toBe(0)
+    expect(result.current.active).toHaveLength(0)
   })
 
   it('toggle activates a mode', () => {
     const { result } = renderHook(() => useFailureModes())
     act(() => result.current.toggle('card_declined'))
-    expect(result.current.active.has('card_declined')).toBe(true)
+    expect(result.current.active).toContain('card_declined')
   })
 
   it('toggle twice deactivates', () => {
@@ -1260,7 +1474,7 @@ describe('useFailureModes', () => {
       result.current.toggle('card_declined')
       result.current.toggle('card_declined')
     })
-    expect(result.current.active.has('card_declined')).toBe(false)
+    expect(result.current.active).not.toContain('card_declined')
   })
 
   it('isActive returns correct boolean', () => {
@@ -1302,7 +1516,7 @@ export const FAILURE_MODES: Record<FailureModeType, FailureModeConfig> = {
 }
 
 interface FailureModeState {
-  active: Set<FailureModeType>
+  active: FailureModeType[]   // array for easy serialization + UI display
   toggle: (type: FailureModeType) => void
   isActive: (type: FailureModeType) => boolean
   clearAll: () => void
@@ -1310,17 +1524,18 @@ interface FailureModeState {
 
 export const useFailureModes = create<FailureModeState>()(
   immer((set, get) => ({
-    active: new Set<FailureModeType>(),
+    active: [],
     toggle: (type) =>
       set((state) => {
-        if (state.active.has(type)) {
-          state.active.delete(type)
+        const idx = state.active.indexOf(type)
+        if (idx >= 0) {
+          state.active.splice(idx, 1)
         } else {
-          state.active.add(type)
+          state.active.push(type)
         }
       }),
-    isActive: (type) => get().active.has(type),
-    clearAll: () => set((state) => { state.active = new Set() }),
+    isActive: (type) => get().active.includes(type),
+    clearAll: () => set((state) => { state.active = [] }),
   }))
 )
 ```
@@ -1342,7 +1557,7 @@ git commit -m "feat(engine): add failure mode registry with 16 modes"
 
 ---
 
-## Task 9: Exam Mode Engine
+## Task 10: Exam Mode Engine
 
 **Files:**
 - Create: `src/engine/exam-mode.ts`
@@ -1518,7 +1733,7 @@ git commit -m "feat(engine): add exam mode engine with 5 seed questions"
 
 ---
 
-## Task 10: Mock SSO Flow
+## Task 11: Mock SSO Flow + Client Simulation
 
 **Files:**
 - Create: `src/lib/sso-mock.ts`, `src/app/api/auth/sso/route.ts`
@@ -1625,9 +1840,81 @@ git add src/lib/sso-mock.ts src/app/api/auth/sso/route.ts src/app/api/auth/perso
 git commit -m "feat(engine): add mock SSO (OIDC) flow and persona swap API"
 ```
 
+- [ ] **Step 5: Add SSO simulation component**
+
+Create `src/components/persona/SsoSimulationButton.tsx`:
+```tsx
+"use client"
+import { emit } from '@/engine/event-emitter'
+import { usePersona } from '@/engine/persona'
+
+export function SsoSimulationButton() {
+  const { active, swap } = usePersona()
+  if (!active.useSso) return null
+
+  const simulate = async () => {
+    emit({
+      actor: 'user', phase: 'user_action',
+      source: 'topbar/sso', action: 'User clicks "Sign in with Google"',
+      complianceStates: ['pii'], simulationLevel: 'simulated',
+      certTips: ['SSO tells YOUR app who the user is. It does not verify identity for Stripe.'],
+    })
+    emit({
+      actor: 'idp', phase: 'client_call',
+      source: 'google-oauth', action: 'Redirect to accounts.google.com/oauth/authorize',
+      complianceStates: ['pii'], simulationLevel: 'simulated',
+      certTips: ['User is redirected to the Identity Provider (Google). Your app sees nothing until callback.'],
+    })
+    emit({
+      actor: 'idp', phase: 'server_call',
+      source: 'google-oauth', action: 'Authorization code returned to callback URL',
+      complianceStates: ['pii'], simulationLevel: 'simulated',
+      request: { code: 'mock_auth_code_abc123', state: 'csrf_token' },
+    })
+    emit({
+      actor: 'app', phase: 'server_call',
+      source: 'api/auth/sso/callback', action: 'Exchange auth code for OIDC token',
+      complianceStates: ['pii'], simulationLevel: 'simulated',
+      request: { code: 'mock_auth_code_abc123' },
+      response: { sub: 'google-sub-dana', email: 'dana@enterprise.example.com', hd: 'enterprise.example.com' },
+      certTips: ['The OIDC token proves who Dana is to YOUR app. Stripe Identity separately verifies Dana for regulated operations.'],
+    })
+    emit({
+      actor: 'app', phase: 'db_write',
+      source: 'api/auth/sso/callback', action: 'App session created — persona set to Dana',
+      complianceStates: ['idle'], simulationLevel: 'simulated',
+      certTips: ['[YOUR APP] owns this session. [STRIPE] owns KYC verification. These are independent systems.'],
+    })
+    swap('dana')
+    await fetch('/api/auth/persona', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ personaId: 'dana' }),
+    })
+  }
+
+  return (
+    <button
+      onClick={simulate}
+      className="rounded border border-blue-300 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100"
+    >
+      Simulate SSO Login (Dana)
+    </button>
+  )
+}
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/components/persona/SsoSimulationButton.tsx
+git commit -m "feat(engine): add SSO simulation client component with Observatory events"
+```
+
 ---
 
-## Task 11: Root Layout + Compliance Border
+## Task 12: Root Layout + Compliance Border
+<!-- renumbered from 11 -->
 
 **Files:**
 - Create: `src/lib/cn.ts`, `src/components/shell/ComplianceBorder.tsx`, `src/components/shell/SplitLayout.tsx`, `src/app/layout.tsx`
@@ -1774,7 +2061,7 @@ git commit -m "feat(shell): add compliance border, split layout, root layout"
 
 ---
 
-## Task 12: TopBar + PersonaBadge
+## Task 13: TopBar + PersonaBadge
 
 **Files:**
 - Create: `src/components/shell/TopBar.tsx`, `src/components/shell/PersonaBadge.tsx`, `src/components/persona/PersonaSwitcher.tsx`
@@ -1929,7 +2216,7 @@ git commit -m "feat(shell): add TopBar, PersonaBadge, PersonaSwitcher"
 
 ---
 
-## Task 13: Observatory Shell
+## Task 14: Observatory Shell
 
 **Files:**
 - Create: `src/components/observatory/Observatory.tsx` and 7 tab stubs
@@ -2190,7 +2477,7 @@ git commit -m "feat(observatory): add shell with 7 tabs"
 
 ---
 
-## Task 14: DVR Controls UI
+## Task 15: DVR Controls UI
 
 **Files:**
 - Create: `src/components/observatory/DVRControls.tsx`
@@ -2260,7 +2547,7 @@ git commit -m "feat(observatory): add DVR controls UI"
 
 ---
 
-## Task 15: Stripe Object Explorer
+## Task 16: Stripe Object Explorer
 
 **Files:**
 - Create: `src/engine/stripe-objects/examples.ts`, update `src/components/observatory/tabs/ObjectExplorerTab.tsx`
@@ -2440,7 +2727,7 @@ git commit -m "feat(observatory): add Stripe object explorer with 3 example obje
 
 ---
 
-## Task 16: Store Guide Annotation System
+## Task 17: Store Guide Annotation System
 
 The `StoreGuideTab` is already wired in Task 13 and reads `storeGuidance` from `SimEvent`. This task ensures the system works end-to-end by verifying that events emitted with `storeGuidance` render correctly.
 
@@ -2517,7 +2804,198 @@ git commit -m "test(engine): add store guide annotation integration tests"
 
 ---
 
-## Task 17: Fake Payment Flow + Full Integration
+## Task 18: React Component Tests
+
+Fast feedback before Playwright. Tests four Observatory tabs and DVRControls with real Zustand state.
+
+**Files:**
+- Create: `tests/components/ApiLogTab.test.tsx`, `tests/components/ComplianceTab.test.tsx`, `tests/components/StoreGuideTab.test.tsx`, `tests/components/DVRControls.test.tsx`
+
+- [ ] **Step 1: Write ApiLogTab tests**
+
+Create `tests/components/ApiLogTab.test.tsx`:
+```tsx
+import { describe, it, expect, beforeEach } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { act } from 'react'
+import { ApiLogTab } from '@/components/observatory/tabs/ApiLogTab'
+import { useEventQueue } from '@/engine/event-queue'
+import { useDVR } from '@/engine/dvr'
+import { emit } from '@/engine/event-emitter'
+
+beforeEach(() => {
+  useEventQueue.getState().clear()
+  useDVR.setState({ cursor: -1, currentEvent: undefined })
+})
+
+describe('ApiLogTab', () => {
+  it('shows empty state before any events', () => {
+    render(<ApiLogTab />)
+    expect(screen.getByText(/No events yet/)).toBeTruthy()
+  })
+
+  it('shows events up to cursor position', () => {
+    act(() => {
+      emit({ actor: 'app', phase: 'server_call', source: 'test', action: 'POST /v1/payment_intents', complianceStates: ['pci'], simulationLevel: 'simulated' })
+    })
+    render(<ApiLogTab />)
+    expect(screen.getByText(/POST \/v1\/payment_intents/)).toBeTruthy()
+  })
+
+  it('highlights current event at cursor', () => {
+    act(() => {
+      emit({ actor: 'user', phase: 'user_action', source: 'test', action: 'User clicked Buy', complianceStates: ['pii'], simulationLevel: 'simulated' })
+    })
+    const { container } = render(<ApiLogTab />)
+    const highlighted = container.querySelector('.border-indigo-400')
+    expect(highlighted).toBeTruthy()
+  })
+})
+```
+
+- [ ] **Step 2: Write ComplianceTab tests**
+
+Create `tests/components/ComplianceTab.test.tsx`:
+```tsx
+import { describe, it, expect, beforeEach } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { act } from 'react'
+import { ComplianceTab } from '@/components/observatory/tabs/ComplianceTab'
+import { useEventQueue } from '@/engine/event-queue'
+import { useDVR } from '@/engine/dvr'
+import { emit } from '@/engine/event-emitter'
+
+beforeEach(() => {
+  useEventQueue.getState().clear()
+  useDVR.setState({ cursor: -1, currentEvent: undefined })
+})
+
+describe('ComplianceTab', () => {
+  it('shows idle state by default', () => {
+    render(<ComplianceTab />)
+    expect(screen.getByText(/Safe \/ Idle/)).toBeTruthy()
+  })
+
+  it('shows PCI label when current event has pci state', () => {
+    act(() => {
+      emit({ actor: 'app', phase: 'client_call', source: 'elements', action: 'Card Element mounted', complianceStates: ['pci'], simulationLevel: 'simulated' })
+    })
+    render(<ComplianceTab />)
+    expect(screen.getByText(/PCI/)).toBeTruthy()
+    expect(screen.getByText(/PCI-DSS/)).toBeTruthy()
+  })
+
+  it('shows combined label for multiple active states', () => {
+    act(() => {
+      emit({ actor: 'app', phase: 'server_call', source: 'test', action: 'test', complianceStates: ['pii', 'pci'], simulationLevel: 'simulated' })
+    })
+    render(<ComplianceTab />)
+    expect(screen.getByText(/PCI.*PII|PII.*PCI/)).toBeTruthy()
+  })
+})
+```
+
+- [ ] **Step 3: Write StoreGuideTab tests**
+
+Create `tests/components/StoreGuideTab.test.tsx`:
+```tsx
+import { describe, it, expect, beforeEach } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { act } from 'react'
+import { StoreGuideTab } from '@/components/observatory/tabs/StoreGuideTab'
+import { useEventQueue } from '@/engine/event-queue'
+import { useDVR } from '@/engine/dvr'
+import { emit } from '@/engine/event-emitter'
+
+beforeEach(() => {
+  useEventQueue.getState().clear()
+  useDVR.setState({ cursor: -1, currentEvent: undefined })
+})
+
+describe('StoreGuideTab', () => {
+  it('shows no guidance message when no event', () => {
+    render(<StoreGuideTab />)
+    expect(screen.getByText(/No store guidance/)).toBeTruthy()
+  })
+
+  it('shows store guidance from current event', () => {
+    act(() => {
+      emit({
+        actor: 'stripe', phase: 'webhook', source: 'stripe', action: 'checkout.session.completed',
+        complianceStates: ['idle'], simulationLevel: 'simulated',
+        storeGuidance: {
+          store: ['customer.id', 'session.id'],
+          neverStore: ['card number'],
+          sourceOfTruth: ['payment status'],
+          listenFor: ['checkout.session.completed'],
+        },
+      })
+    })
+    render(<StoreGuideTab />)
+    expect(screen.getByText(/customer\.id/)).toBeTruthy()
+    expect(screen.getByText(/card number/)).toBeTruthy()
+  })
+})
+```
+
+- [ ] **Step 4: Write DVRControls tests**
+
+Create `tests/components/DVRControls.test.tsx`:
+```tsx
+import { describe, it, expect, beforeEach } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
+import { act } from 'react'
+import { DVRControls } from '@/components/observatory/DVRControls'
+import { useDVR } from '@/engine/dvr'
+import { useEventQueue } from '@/engine/event-queue'
+import { emit } from '@/engine/event-emitter'
+
+beforeEach(() => {
+  useEventQueue.getState().clear()
+  useDVR.setState({ cursor: -1, currentEvent: undefined, isPlaying: false, isFrozen: false, speed: 1 })
+})
+
+describe('DVRControls', () => {
+  it('shows paused state by default', () => {
+    render(<DVRControls />)
+    expect(screen.getByTitle('Play')).toBeTruthy()
+  })
+
+  it('shows frozen label when frozen', () => {
+    useDVR.setState({ isFrozen: true })
+    render(<DVRControls />)
+    expect(screen.getByText(/frozen/)).toBeTruthy()
+  })
+
+  it('shows event count', () => {
+    act(() => {
+      emit({ actor: 'user', phase: 'user_action', source: 'test', action: 'a', complianceStates: ['idle'], simulationLevel: 'simulated' })
+      emit({ actor: 'user', phase: 'user_action', source: 'test', action: 'b', complianceStates: ['idle'], simulationLevel: 'simulated' })
+    })
+    render(<DVRControls />)
+    expect(screen.getByText(/1\/2/)).toBeTruthy()
+  })
+})
+```
+
+- [ ] **Step 5: Run component tests**
+
+```bash
+pnpm test tests/components/
+```
+
+Expected: PASS
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add tests/components/
+git commit -m "test(components): add React component tests for Observatory tabs and DVRControls"
+```
+
+---
+
+## Task 19: Fake Payment Flow + Full Integration
 
 **Files:**
 - Create: `src/components/fake-flow/FakePaymentFlow.tsx`, update `src/app/page.tsx`
@@ -2551,7 +3029,10 @@ export function FakePaymentFlow() {
   const startCheckout = () => {
     setStep('collecting')
     emit({
+      flowId: 'fake-payment',
+      stepId: 'collect-pii',
       actor: 'user',
+      phase: 'user_action',
       source: 'stripeland/fake-checkout',
       action: 'User clicks "Buy $49.99"',
       complianceStates: ['pii'],
@@ -2568,7 +3049,10 @@ export function FakePaymentFlow() {
 
   const enterCard = () => {
     emit({
+      flowId: 'fake-payment',
+      stepId: 'mount-element',
       actor: 'app',
+      phase: 'client_call',
       source: 'stripe.js',
       action: 'Stripe.js mounts card Element iframe',
       stripeObject: 'Element',
@@ -2591,7 +3075,10 @@ export function FakePaymentFlow() {
   const confirmPayment = () => {
     setStep('processing')
     emit({
+      flowId: 'fake-payment',
+      stepId: 'create-payment-intent',
       actor: 'app',
+      phase: 'server_call',
       source: 'stripeland/api/create-payment-intent',
       action: 'POST /v1/payment_intents',
       stripeObject: 'PaymentIntent',
@@ -2610,7 +3097,10 @@ export function FakePaymentFlow() {
 
     setTimeout(() => {
       emit({
+        flowId: 'fake-payment',
+        stepId: 'payment-intent-succeeded',
         actor: 'stripe',
+        phase: 'stripe_object',
         source: 'stripe-server',
         action: 'PaymentIntent confirms → status: succeeded',
         stripeObject: 'PaymentIntent',
@@ -2622,7 +3112,10 @@ export function FakePaymentFlow() {
 
       setTimeout(() => {
         emit({
+          flowId: 'fake-payment',
+          stepId: 'webhook-succeeded',
           actor: 'webhook',
+          phase: 'webhook',
           source: 'stripe-webhook',
           action: 'payment_intent.succeeded',
           stripeObject: 'PaymentIntent',
@@ -2785,7 +3278,7 @@ git commit -m "feat(flow): add fake payment flow end-to-end with E2E tests"
 
 ---
 
-## Task 18: CI Verification
+## Task 20: CI Verification
 
 - [ ] **Step 1: Verify CI config covers all test commands**
 
@@ -2837,23 +3330,26 @@ git commit -m "chore: phase 1 engine complete — all tests passing"
 ## Self-Review Checklist
 
 **Spec coverage:**
-- ✅ Standardized SimEvent type → Task 2
-- ✅ Event queue / DVR → Tasks 3, 4
-- ✅ Compliance state machine → Task 5
-- ✅ Persona store + fake JWT → Task 6
-- ✅ RBAC + middleware → Task 7
-- ✅ Failure mode registry → Task 8
-- ✅ Exam mode engine → Task 9
-- ✅ Mock SSO → Task 10
-- ✅ Layout shell + compliance border → Task 11
-- ✅ TopBar + PersonaBadge → Task 12
-- ✅ Observatory 7 tabs → Task 13
-- ✅ DVR controls UI → Task 14
-- ✅ Object explorer (3 objects) → Task 15
-- ✅ Store guide annotations → Task 16
-- ✅ One fake payment flow end-to-end → Task 17
-- ✅ CI → Task 1 + Task 18
+- ✅ SimEvent with actor, phase, flowId, stepId → Task 2
+- ✅ Event queue (events only, no cursor) → Task 3
+- ✅ DVR owns cursor, subscribes to queue → Task 4
+- ✅ Compliance multi-state result → Task 5
+- ✅ Redaction helper → Task 6
+- ✅ Persona store + fake JWT → Task 7
+- ✅ RBAC + middleware → Task 8
+- ✅ Failure mode registry (17 modes, array) → Task 9
+- ✅ Exam mode engine → Task 10
+- ✅ Mock SSO + client simulation component → Task 11
+- ✅ Layout shell + compliance border → Task 12
+- ✅ TopBar + PersonaBadge → Task 13
+- ✅ Observatory 7 tabs → Task 14
+- ✅ DVR controls UI → Task 15
+- ✅ Object explorer (3 objects) → Task 16
+- ✅ Store guide annotations → Task 17
+- ✅ React component tests (4 components) → Task 18
+- ✅ One fake payment flow end-to-end with flowId/phase → Task 19
+- ✅ CI → Task 1 + Task 20
 
-**Type consistency:** All types flow from `src/engine/types.ts`. No local type redefinitions.
+**Type consistency:** All types flow from `src/engine/types.ts`. `phase` is required on `SimEvent` — all emit() calls include it. `EventPhase` union defined alongside `Actor`.
 
 **Placeholder scan:** Zero TBDs. Every step has code.
