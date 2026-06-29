@@ -94,21 +94,22 @@ tests/
 ```
 Task 1 (scaffold)
   └─ Task 2 (types)
-       ├─ Task 3 (event-queue)  ─┐
-       ├─ Task 4 (dvr) ← Task 3 ─┼─ Task 12 (layout + border)
-       ├─ Task 5 (compliance)   ─┘     └─ Task 13 (topbar)
-       ├─ Task 6 (redaction)                └─ Task 14 (observatory shell)
-       ├─ Task 7 (persona)                       ├─ Task 15 (dvr controls UI)
-       ├─ Task 8 (rbac) ← Task 7                 ├─ Task 16 (object explorer)
-       ├─ Task 9 (failure modes)                  └─ Task 17 (store guide)
+       ├─ Task 3 (event-queue + emit)  ─┐
+       ├─ Task 4 (dvr) ← Task 3        ─┼─ Task 12 (layout + border)
+       ├─ Task 5 (compliance)           ─┘     └─ Task 13 (topbar + SSO button)
+       ├─ Task 6 (redaction)                        └─ Task 14 (DVRControls + observatory shell + 7 tabs)
+       ├─ Task 7 (persona)                               └─ Task 15 (verification checkpoint)
+       ├─ Task 8 (rbac) ← Task 7                         ├─ Task 16 (object explorer + stripe-objects test)
+       ├─ Task 9 (failure modes)                          └─ Task 17 (store guide)
        └─ Task 10 (exam mode)
-                                           Task 18 (react component tests) ← Task 14
-Task 11 (SSO mock) ← Tasks 7, 8           Task 19 (fake flow) ← Tasks 12-18
+                                                  Task 18 (react component tests) ← Task 14
+Task 11 (SSO mock) ← Tasks 7, 8                  Task 19 (fake flow) ← Tasks 12-18
 Task 20 (CI) ← Task 1
 ```
 
 Parallel after Task 2: Tasks 3, 5, 6, 7, 9, 10.
 Task 4 (DVR) depends on Task 3 (queue) — run sequentially.
+Task 14 creates DVRControls first (Step 2), then Observatory (Step 3) — sequential within the task.
 Parallel after Task 14: Tasks 15, 16, 17, 18.
 
 ---
@@ -125,7 +126,7 @@ Directory already has files (docs, git history). Use a temp dir then merge:
 ```bash
 cd /Users/b/Desktop/code/stripey-stripe
 pnpm create next-app@latest temp-stripe-app --typescript --tailwind --eslint --app --src-dir --import-alias "@/*" --use-pnpm
-rsync -av temp-stripe-app/ ./
+rsync -av --exclude .git temp-stripe-app/ ./
 rm -rf temp-stripe-app
 ```
 
@@ -135,7 +136,7 @@ Expected: Next.js project files merged into existing directory without overwriti
 
 ```bash
 pnpm add zustand immer framer-motion clsx tailwind-merge
-pnpm add @radix-ui/react-tabs @radix-ui/react-dropdown-menu @radix-ui/react-badge
+pnpm add @radix-ui/react-tabs @radix-ui/react-dropdown-menu
 pnpm add -D vitest @vitejs/plugin-react jsdom @testing-library/react @testing-library/jest-dom
 pnpm add -D playwright @playwright/test
 pnpm add -D @types/node
@@ -437,6 +438,7 @@ Create `tests/engine/event-queue.test.ts`:
 import { describe, it, expect, beforeEach } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useEventQueue } from '@/engine/event-queue'
+import { emit } from '@/engine/event-emitter'
 import type { SimEvent } from '@/engine/types'
 
 const makeEvent = (overrides: Partial<SimEvent> = {}): SimEvent => ({
@@ -490,6 +492,50 @@ describe('useEventQueue', () => {
     const { result } = renderHook(() => useEventQueue())
     act(() => result.current.enqueue(makeEvent()))
     expect((result.current as Record<string, unknown>)['cursor']).toBeUndefined()
+  })
+})
+
+const makeEmitPartial = (overrides: Partial<Omit<SimEvent, 'id' | 'timestamp'>> = {}) => ({
+  actor: 'user' as const,
+  phase: 'user_action' as const,
+  source: 'test',
+  action: 'test action',
+  complianceStates: ['idle'] as const,
+  simulationLevel: 'simulated' as const,
+  ...overrides,
+})
+
+describe('emit helper', () => {
+  beforeEach(() => {
+    useEventQueue.getState().clear()
+  })
+
+  it('creates an event and enqueues it', () => {
+    const evt = emit(makeEmitPartial())
+    expect(useEventQueue.getState().events).toHaveLength(1)
+    expect(evt.id).toMatch(/^evt_/)
+    expect(evt.timestamp).toBeTruthy()
+  })
+
+  it('generates unique ids across calls', () => {
+    const e1 = emit(makeEmitPartial())
+    const e2 = emit(makeEmitPartial())
+    expect(e1.id).not.toBe(e2.id)
+  })
+
+  it('preserves all provided fields', () => {
+    const evt = emit(makeEmitPartial({ action: 'custom action', actor: 'stripe', phase: 'stripe_object' }))
+    expect(evt.action).toBe('custom action')
+    expect(evt.actor).toBe('stripe')
+    expect(evt.phase).toBe('stripe_object')
+  })
+
+  it('requires phase field (TypeScript enforced)', () => {
+    // This test confirms phase is required at compile time.
+    // @ts-expect-error — phase is required
+    const result = () => emit({ actor: 'user', source: 'test', action: 'test', complianceStates: ['idle'], simulationLevel: 'simulated' })
+    void result
+    expect(true).toBe(true) // type error above is the assertion
   })
 })
 ```
@@ -563,7 +609,7 @@ export function emit(partial: Omit<SimEvent, 'id' | 'timestamp'> & { phase: SimE
 pnpm test tests/engine/event-queue.test.ts
 ```
 
-Expected: PASS (7 tests)
+Expected: PASS (event queue tests + emit helper tests)
 
 - [ ] **Step 6: Commit**
 
@@ -640,54 +686,59 @@ describe('useDVR — playback controls', () => {
 
 describe('useDVR — cursor management (the DVR learning model)', () => {
   it('first enqueue always shows the event (cursor -1 → 0), even when paused', () => {
-    // paused by default
-    act(() => emit(makePartial({ id: 'evt_1' })))
+    // paused by default — emit() generates its own id, test by action instead
+    act(() => emit(makePartial({ action: 'first event' })))
     expect(useDVR.getState().cursor).toBe(0)
-    expect(useDVR.getState().currentEvent?.id).toMatch('evt_1')
+    expect(useDVR.getState().currentEvent?.action).toBe('first event')
   })
 
   it('enqueue does NOT advance cursor when paused and cursor already set', () => {
-    act(() => emit(makePartial({ id: 'evt_1' })))  // cursor → 0
-    act(() => emit(makePartial({ id: 'evt_2' })))  // paused: cursor stays 0
+    act(() => emit(makePartial({ action: 'first event' })))   // cursor → 0
+    act(() => emit(makePartial({ action: 'second event' })))  // paused: cursor stays 0
     expect(useDVR.getState().cursor).toBe(0)
-    expect(useDVR.getState().currentEvent?.id).toMatch('evt_1')
+    expect(useDVR.getState().currentEvent?.action).toBe('first event')
   })
 
   it('enqueue advances cursor to latest when playing', () => {
     useDVR.setState({ isPlaying: true, isFrozen: false })
-    act(() => emit(makePartial({ id: 'evt_1' })))
-    act(() => emit(makePartial({ id: 'evt_2' })))
+    act(() => emit(makePartial({ action: 'first event' })))
+    act(() => emit(makePartial({ action: 'second event' })))
     expect(useDVR.getState().cursor).toBe(1)
-    expect(useDVR.getState().currentEvent?.id).toMatch('evt_2')
+    expect(useDVR.getState().currentEvent?.action).toBe('second event')
   })
 
   it('freeze prevents cursor movement even when isPlaying was true', () => {
     useDVR.setState({ isPlaying: true, isFrozen: true })
-    act(() => emit(makePartial({ id: 'evt_1' })))  // cursor → 0 (first event)
-    act(() => emit(makePartial({ id: 'evt_2' })))  // frozen: stays at 0
+    act(() => emit(makePartial({ action: 'first event' })))   // cursor → 0 (first event rule)
+    act(() => emit(makePartial({ action: 'second event' })))  // frozen: stays at 0
     expect(useDVR.getState().cursor).toBe(0)
+    expect(useDVR.getState().currentEvent?.action).toBe('first event')
   })
 
   it('stepForward advances cursor by 1', () => {
-    act(() => emit(makePartial({ id: 'evt_1' })))
-    act(() => emit(makePartial({ id: 'evt_2' })))
+    act(() => emit(makePartial({ action: 'first event' })))
+    act(() => emit(makePartial({ action: 'second event' })))
     // cursor is at 0 (paused after first event)
     const { result } = renderHook(() => useDVR())
     act(() => result.current.stepForward())
     expect(result.current.cursor).toBe(1)
+    expect(result.current.currentEvent?.action).toBe('second event')
   })
 
   it('stepBack decrements cursor by 1', () => {
-    act(() => emit(makePartial({ id: 'evt_1' })))
-    act(() => emit(makePartial({ id: 'evt_2' })))
-    useDVR.setState({ cursor: 1, currentEvent: useEventQueue.getState().events[1] })
+    act(() => emit(makePartial({ action: 'first event' })))
+    act(() => emit(makePartial({ action: 'second event' })))
+    // manually advance cursor to 1 so we can step back
+    const events = useEventQueue.getState().events
+    useDVR.setState({ cursor: 1, currentEvent: events[1] ?? events[0] })
     const { result } = renderHook(() => useDVR())
     act(() => result.current.stepBack())
     expect(result.current.cursor).toBe(0)
+    expect(result.current.currentEvent?.action).toBe('first event')
   })
 
   it('clear resets cursor to -1', () => {
-    act(() => emit(makePartial({ id: 'evt_1' })))
+    act(() => emit(makePartial({ action: 'first event' })))
     act(() => useEventQueue.getState().clear())
     expect(useDVR.getState().cursor).toBe(-1)
     expect(useDVR.getState().currentEvent).toBeUndefined()
@@ -834,7 +885,7 @@ git commit -m "feat(engine): add DVR store with step/play/freeze controls"
 Create `tests/engine/compliance.test.ts`:
 ```typescript
 import { describe, it, expect } from 'vitest'
-import { deriveComplianceColor, getComplianceMeta } from '@/engine/compliance'
+import { deriveComplianceResult, getComplianceMeta } from '@/engine/compliance'
 
 describe('deriveComplianceResult', () => {
   it('idle → green, label "Safe / Idle"', () => {
@@ -1552,7 +1603,7 @@ Expected: PASS
 
 ```bash
 git add src/engine/failure-modes.ts tests/engine/failure-modes.test.ts
-git commit -m "feat(engine): add failure mode registry with 16 modes"
+git commit -m "feat(engine): add failure mode registry with 17 modes"
 ```
 
 ---
@@ -1938,23 +1989,22 @@ Create `src/components/shell/ComplianceBorder.tsx`:
 "use client"
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useEventQueue } from '@/engine/event-queue'
-import { deriveComplianceColor, COMPLIANCE_CONFIG } from '@/engine/compliance'
+import { useDVR } from '@/engine/dvr'
+import { deriveComplianceResult } from '@/engine/compliance'
 
 export function ComplianceBorder() {
-  const currentEvent = useEventQueue((s) => s.currentEvent)
+  const currentEvent = useDVR((s) => s.currentEvent)
   const [color, setColor] = useState('#22C55E')
   const [label, setLabel] = useState<string | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const states = currentEvent?.complianceStates ?? ['idle']
-    const newColor = deriveComplianceColor(states)
-    const primaryState = states.find((s) => s !== 'idle') ?? 'idle'
-    const meta = COMPLIANCE_CONFIG[primaryState]
+    const result = deriveComplianceResult(states)
+    const newColor = result.color
 
     if (newColor !== color) {
-      setLabel(meta.label)
+      setLabel(result.label)
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
       timeoutRef.current = setTimeout(() => {
         setColor(newColor)
@@ -2152,6 +2202,7 @@ Create `src/components/shell/TopBar.tsx`:
 import Link from 'next/link'
 import { PersonaBadge } from './PersonaBadge'
 import { PersonaSwitcher } from '@/components/persona/PersonaSwitcher'
+import { SsoSimulationButton } from '@/components/persona/SsoSimulationButton'
 
 const BUSINESSES = [
   { id: 'stripeland', label: 'Stripeland', href: '/stripeland' },
@@ -2178,6 +2229,7 @@ export function TopBar() {
       </nav>
       <div className="ml-auto flex items-center gap-3">
         <PersonaSwitcher />
+        <SsoSimulationButton />
         <PersonaBadge />
         <span className="rounded bg-amber-100 px-2 py-0.5 font-mono text-xs text-amber-700">
           TEST MODE
@@ -2219,6 +2271,7 @@ git commit -m "feat(shell): add TopBar, PersonaBadge, PersonaSwitcher"
 ## Task 14: Observatory Shell
 
 **Files:**
+- Create: `src/components/observatory/DVRControls.tsx` (must be first — Observatory imports it)
 - Create: `src/components/observatory/Observatory.tsx` and 7 tab stubs
 
 - [ ] **Step 1: Install Tabs primitive**
@@ -2227,7 +2280,65 @@ git commit -m "feat(shell): add TopBar, PersonaBadge, PersonaSwitcher"
 pnpm dlx shadcn@latest add tabs
 ```
 
-- [ ] **Step 2: Build Observatory container**
+- [ ] **Step 2: Create DVRControls (required before Observatory.tsx)**
+
+Observatory.tsx imports DVRControls — create it first so type-check passes.
+
+Create `src/components/observatory/DVRControls.tsx`:
+```tsx
+"use client"
+import { useDVR } from '@/engine/dvr'
+import { useEventQueue } from '@/engine/event-queue'
+import type { PlaybackSpeed } from '@/engine/types'
+
+const SPEEDS: PlaybackSpeed[] = [0.5, 1, 2]
+
+export function DVRControls() {
+  const { isPlaying, isFrozen, speed, cursor, play, pause, freeze, unfreeze, stepForward, stepBack, jumpToStart, jumpToEnd, setSpeed } = useDVR()
+  const { events } = useEventQueue()
+  const total = events.length
+
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-t border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950">
+      <button onClick={jumpToStart} title="Jump to start" className="rounded p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30" disabled={cursor <= 0}>◀◀</button>
+      <button onClick={stepBack} title="Step back" className="rounded p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30" disabled={cursor <= 0}>◀</button>
+      <button
+        onClick={isPlaying ? pause : play}
+        title={isPlaying ? 'Pause' : 'Play'}
+        className="rounded p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+      >
+        {isPlaying ? '❚❚' : '▶'}
+      </button>
+      <button onClick={stepForward} title="Step forward" className="rounded p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30" disabled={cursor >= total - 1}>▶</button>
+      <button onClick={jumpToEnd} title="Jump to end" className="rounded p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30" disabled={cursor >= total - 1}>▶▶</button>
+
+      <span className="mx-1 font-mono text-xs text-zinc-400">
+        {total === 0 ? '—' : `${cursor + 1}/${total}`}
+      </span>
+
+      <div className="ml-auto flex items-center gap-1">
+        {SPEEDS.map((s) => (
+          <button
+            key={s}
+            onClick={() => setSpeed(s)}
+            className={`rounded px-1.5 py-0.5 font-mono text-xs ${speed === s ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300' : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
+          >
+            {s}x
+          </button>
+        ))}
+        <button
+          onClick={isFrozen ? unfreeze : freeze}
+          className={`ml-1 rounded px-2 py-0.5 font-mono text-xs ${isFrozen ? 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
+        >
+          {isFrozen ? '🔒 frozen' : 'freeze'}
+        </button>
+      </div>
+    </div>
+  )
+}
+```
+
+- [ ] **Step 3: Build Observatory container**
 
 Create `src/components/observatory/Observatory.tsx`:
 ```tsx
@@ -2286,17 +2397,20 @@ export function Observatory() {
 }
 ```
 
-- [ ] **Step 3: Create tab stubs**
+- [ ] **Step 4: Create tab components**
 
-Create each file with a placeholder that renders:
+Rule: `useEventQueue` owns `events`. `useDVR` owns `cursor` and `currentEvent`. Every tab follows this split.
 
 `src/components/observatory/tabs/ApiLogTab.tsx`:
 ```tsx
 "use client"
 import { useEventQueue } from '@/engine/event-queue'
+import { useDVR } from '@/engine/dvr'
+import { redactSensitiveFields } from '@/engine/redaction'
 
 export function ApiLogTab() {
-  const { events, cursor } = useEventQueue()
+  const { events } = useEventQueue()
+  const { cursor } = useDVR()
   const visible = events.slice(0, cursor + 1)
 
   return (
@@ -2312,6 +2426,12 @@ export function ApiLogTab() {
           <span className="text-zinc-400">[{evt.actor.toUpperCase()}]</span>{' '}
           <span className="font-semibold">{evt.action}</span>
           {evt.stripeObject && <span className="ml-2 text-zinc-400">→ {evt.stripeObject}</span>}
+          {evt.request !== undefined && (
+            <pre className="mt-1 overflow-x-auto text-zinc-500">{JSON.stringify(redactSensitiveFields(evt.request), null, 2)}</pre>
+          )}
+          {evt.response !== undefined && (
+            <pre className="mt-1 overflow-x-auto text-zinc-500">{JSON.stringify(redactSensitiveFields(evt.response), null, 2)}</pre>
+          )}
         </div>
       ))}
     </div>
@@ -2323,9 +2443,11 @@ export function ApiLogTab() {
 ```tsx
 "use client"
 import { useEventQueue } from '@/engine/event-queue'
+import { useDVR } from '@/engine/dvr'
 
 export function WebhooksTab() {
-  const { events, cursor } = useEventQueue()
+  const { events } = useEventQueue()
+  const { cursor } = useDVR()
   const webhooks = events.slice(0, cursor + 1).filter((e) => e.actor === 'webhook')
 
   return (
@@ -2349,7 +2471,7 @@ export function WebhooksTab() {
 export function ObjectExplorerTab() {
   return (
     <div className="p-3 font-mono text-xs text-zinc-400">
-      Object explorer — wired in Task 15.
+      Object explorer — wired in Task 16.
     </div>
   )
 }
@@ -2369,17 +2491,20 @@ export function MoneyFlowTab() {
 `src/components/observatory/tabs/ComplianceTab.tsx`:
 ```tsx
 "use client"
-import { useEventQueue } from '@/engine/event-queue'
-import { deriveActiveMeta } from '@/engine/compliance'
+import { useDVR } from '@/engine/dvr'
+import { deriveComplianceResult } from '@/engine/compliance'
 
 export function ComplianceTab() {
-  const currentEvent = useEventQueue((s) => s.currentEvent)
+  const currentEvent = useDVR((s) => s.currentEvent)
   const states = currentEvent?.complianceStates ?? ['idle']
-  const metas = deriveActiveMeta(states)
+  const result = deriveComplianceResult(states)
 
   return (
     <div className="space-y-3 p-3 font-mono text-xs">
-      {metas.map((meta) => (
+      {result.active.length > 1 && (
+        <p className="font-semibold" style={{ color: result.color }}>{result.label}</p>
+      )}
+      {result.metas.map((meta) => (
         <div key={meta.state} className="rounded border p-3" style={{ borderColor: meta.color }}>
           <p className="font-bold" style={{ color: meta.color }}>{meta.label}</p>
           <p className="mt-1 text-zinc-500">{meta.regulation}</p>
@@ -2399,10 +2524,10 @@ export function ComplianceTab() {
 `src/components/observatory/tabs/StoreGuideTab.tsx`:
 ```tsx
 "use client"
-import { useEventQueue } from '@/engine/event-queue'
+import { useDVR } from '@/engine/dvr'
 
 export function StoreGuideTab() {
-  const currentEvent = useEventQueue((s) => s.currentEvent)
+  const currentEvent = useDVR((s) => s.currentEvent)
   const guide = currentEvent?.storeGuidance
 
   if (!guide) {
@@ -2443,10 +2568,10 @@ export function StoreGuideTab() {
 `src/components/observatory/tabs/CertTipsTab.tsx`:
 ```tsx
 "use client"
-import { useEventQueue } from '@/engine/event-queue'
+import { useDVR } from '@/engine/dvr'
 
 export function CertTipsTab() {
-  const currentEvent = useEventQueue((s) => s.currentEvent)
+  const currentEvent = useDVR((s) => s.currentEvent)
   const tips = currentEvent?.certTips ?? []
 
   return (
@@ -2462,88 +2587,61 @@ export function CertTipsTab() {
 }
 ```
 
-- [ ] **Step 4: Verify**
+- [ ] **Step 5: Verify**
 
 ```bash
 pnpm type-check
 ```
 
-- [ ] **Step 5: Commit**
+Expected: 0 errors
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/components/observatory/
-git commit -m "feat(observatory): add shell with 7 tabs"
+git commit -m "feat(observatory): add DVR controls and shell with 7 tabs"
 ```
 
 ---
 
-## Task 15: DVR Controls UI
+## Task 15: DVR Controls — Verification Checkpoint
+
+> `DVRControls.tsx` was created in Task 14 Step 2 to unblock Observatory.tsx type-checking. This task is a checkpoint: confirm the full Observatory shell compiles standalone.
 
 **Files:**
-- Create: `src/components/observatory/DVRControls.tsx`
+- `src/components/observatory/DVRControls.tsx` (created in Task 14)
 
-- [ ] **Step 1: Build DVRControls**
-
-Create `src/components/observatory/DVRControls.tsx`:
-```tsx
-"use client"
-import { useDVR } from '@/engine/dvr'
-import { useEventQueue } from '@/engine/event-queue'
-import type { PlaybackSpeed } from '@/engine/types'
-
-const SPEEDS: PlaybackSpeed[] = [0.5, 1, 2]
-
-export function DVRControls() {
-  const { isPlaying, isFrozen, speed, play, pause, freeze, unfreeze, stepForward, stepBack, jumpToStart, jumpToEnd, setSpeed } = useDVR()
-  const { cursor, events } = useEventQueue()
-  const total = events.length
-
-  return (
-    <div className="flex shrink-0 items-center gap-2 border-t border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950">
-      <button onClick={jumpToStart} title="Jump to start" className="rounded p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30" disabled={cursor <= 0}>◀◀</button>
-      <button onClick={stepBack} title="Step back" className="rounded p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30" disabled={cursor <= 0}>◀</button>
-      <button
-        onClick={isPlaying ? pause : play}
-        title={isPlaying ? 'Pause' : 'Play'}
-        className="rounded p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-      >
-        {isPlaying ? '❚❚' : '▶'}
-      </button>
-      <button onClick={stepForward} title="Step forward" className="rounded p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30" disabled={cursor >= total - 1}>▶</button>
-      <button onClick={jumpToEnd} title="Jump to end" className="rounded p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30" disabled={cursor >= total - 1}>▶▶</button>
-
-      <span className="mx-1 font-mono text-xs text-zinc-400">
-        {total === 0 ? '—' : `${cursor + 1}/${total}`}
-      </span>
-
-      <div className="ml-auto flex items-center gap-1">
-        {SPEEDS.map((s) => (
-          <button
-            key={s}
-            onClick={() => setSpeed(s)}
-            className={`rounded px-1.5 py-0.5 font-mono text-xs ${speed === s ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300' : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
-          >
-            {s}x
-          </button>
-        ))}
-        <button
-          onClick={isFrozen ? unfreeze : freeze}
-          className={`ml-1 rounded px-2 py-0.5 font-mono text-xs ${isFrozen ? 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
-        >
-          {isFrozen ? '🔒 frozen' : 'freeze'}
-        </button>
-      </div>
-    </div>
-  )
-}
-```
-
-- [ ] **Step 2: Commit**
+- [ ] **Step 1: Verify type-check with all Observatory files**
 
 ```bash
-git add src/components/observatory/DVRControls.tsx
-git commit -m "feat(observatory): add DVR controls UI"
+pnpm type-check
 ```
+
+Expected: 0 errors across all Observatory files.
+
+- [ ] **Step 2: Spot-check imports are correct**
+
+Confirm these patterns across all Observatory tab files — no file reads cursor or currentEvent from useEventQueue:
+
+```bash
+grep -r "useEventQueue" src/components/observatory/
+```
+
+Expected output: only `useEventQueue` calls reading `.events` — no `.cursor`, no `.currentEvent`.
+
+```bash
+grep -r "useDVR" src/components/observatory/
+```
+
+Expected: DVRControls.tsx, ComplianceTab.tsx, StoreGuideTab.tsx, CertTipsTab.tsx all import useDVR.
+
+- [ ] **Step 3: Run unit tests**
+
+```bash
+pnpm test
+```
+
+Expected: all tests pass
 
 ---
 
@@ -2712,17 +2810,68 @@ export function ObjectExplorerTab() {
 }
 ```
 
-- [ ] **Step 3: Run type-check**
+- [ ] **Step 3: Add stripe-objects test**
+
+Create `tests/engine/stripe-objects.test.ts`:
+```typescript
+import { describe, it, expect } from 'vitest'
+import { STRIPE_OBJECT_EXAMPLES, getObjectExample } from '@/engine/stripe-objects/examples'
+
+describe('STRIPE_OBJECT_EXAMPLES', () => {
+  it('has at least 3 example objects', () => {
+    expect(STRIPE_OBJECT_EXAMPLES.length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('each example has required fields', () => {
+    for (const example of STRIPE_OBJECT_EXAMPLES) {
+      expect(example.objectType).toBeTruthy()
+      expect(example.id).toBeTruthy()
+      expect(example.webhookEvents.length).toBeGreaterThan(0)
+      expect(example.storeGuidance.store).toBeDefined()
+      expect(example.storeGuidance.neverStore).toBeDefined()
+      expect(example.relationships.length).toBeGreaterThan(0)
+    }
+  })
+})
+
+describe('getObjectExample', () => {
+  it('returns Customer by objectType', () => {
+    const obj = getObjectExample('Customer')
+    expect(obj).toBeDefined()
+    expect(obj?.id).toBe('cus_example123')
+  })
+
+  it('returns PaymentIntent', () => {
+    const obj = getObjectExample('PaymentIntent')
+    expect(obj?.id).toBe('pi_example789')
+    expect(obj?.storeGuidance.store).toContain('id')
+  })
+
+  it('returns undefined for unknown type', () => {
+    expect(getObjectExample('Widget')).toBeUndefined()
+  })
+})
+```
+
+- [ ] **Step 4: Run tests**
+
+```bash
+pnpm test tests/engine/stripe-objects.test.ts
+```
+
+Expected: PASS
+
+- [ ] **Step 5: Run type-check**
 
 ```bash
 pnpm type-check
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/engine/stripe-objects/ src/components/observatory/tabs/ObjectExplorerTab.tsx
-git commit -m "feat(observatory): add Stripe object explorer with 3 example objects"
+git add src/engine/stripe-objects/ src/components/observatory/tabs/ObjectExplorerTab.tsx tests/engine/stripe-objects.test.ts
+git commit -m "feat(observatory): add Stripe object explorer with 3 example objects and tests"
 ```
 
 ---
@@ -2739,16 +2888,21 @@ The `StoreGuideTab` is already wired in Task 13 and reads `storeGuidance` from `
 Create `tests/engine/store-guide.test.ts`:
 ```typescript
 import { describe, it, expect, beforeEach } from 'vitest'
-import { act, renderHook } from '@testing-library/react'
+import { act } from '@testing-library/react'
 import { emit } from '@/engine/event-emitter'
 import { useEventQueue } from '@/engine/event-queue'
+import { useDVR } from '@/engine/dvr'
 
-beforeEach(() => useEventQueue.getState().clear())
+beforeEach(() => {
+  useEventQueue.getState().clear()
+  useDVR.setState({ cursor: -1, currentEvent: undefined })
+})
 
 describe('StoreGuidance in events', () => {
   it('events can carry storeGuidance', () => {
     const evt = emit({
       actor: 'stripe',
+      phase: 'webhook',
       source: 'checkout',
       action: 'checkout.session.completed',
       stripeObject: 'CheckoutSession',
@@ -2765,11 +2919,11 @@ describe('StoreGuidance in events', () => {
     expect(evt.storeGuidance?.neverStore).toContain('card number')
   })
 
-  it('currentEvent reflects storeGuidance', () => {
-    const { result } = renderHook(() => useEventQueue())
+  it('DVR currentEvent reflects storeGuidance', () => {
     act(() => {
       emit({
         actor: 'stripe',
+        phase: 'webhook',
         source: 'test',
         action: 'test.event',
         complianceStates: ['idle'],
@@ -2782,7 +2936,8 @@ describe('StoreGuidance in events', () => {
         },
       })
     })
-    expect(result.current.currentEvent?.storeGuidance?.store).toContain('order_id')
+    // currentEvent lives in DVR, not in useEventQueue
+    expect(useDVR.getState().currentEvent?.storeGuidance?.store).toContain('order_id')
   })
 })
 ```
@@ -2890,7 +3045,8 @@ describe('ComplianceTab', () => {
       emit({ actor: 'app', phase: 'server_call', source: 'test', action: 'test', complianceStates: ['pii', 'pci'], simulationLevel: 'simulated' })
     })
     render(<ComplianceTab />)
-    expect(screen.getByText(/PCI.*PII|PII.*PCI/)).toBeTruthy()
+    // result.label = "PCI Scope + PII In Flight" — shown as a single element when multiple states active
+    expect(screen.getByText(/PCI.*PII/i)).toBeTruthy()
   })
 })
 ```
@@ -3218,11 +3374,15 @@ test.describe('Fake Payment Flow', () => {
     await expect(page.getByText('Payment succeeded')).toBeVisible({ timeout: 5000 })
   })
 
-  test('Observatory shows events after payment', async ({ page }) => {
+  test('Observatory shows webhook event after jumping to end', async ({ page }) => {
     await page.goto('/')
     await page.getByText('Buy Course — $49.99').click()
     await page.getByText('Pay $49.99').click()
-    await expect(page.getByText('payment_intent.succeeded')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('✓ Payment succeeded')).toBeVisible({ timeout: 5000 })
+    // DVR starts paused — cursor holds at first event.
+    // Jump to end to advance cursor to the webhook event.
+    await page.getByTitle('Jump to end').click()
+    await expect(page.getByText('payment_intent.succeeded')).toBeVisible()
   })
 
   test('persona switcher changes persona', async ({ page }) => {
@@ -3351,5 +3511,20 @@ git commit -m "chore: phase 1 engine complete — all tests passing"
 - ✅ CI → Task 1 + Task 20
 
 **Type consistency:** All types flow from `src/engine/types.ts`. `phase` is required on `SimEvent` — all emit() calls include it. `EventPhase` union defined alongside `Actor`.
+
+**DVR/Queue split:** Only `useEventQueue` exposes `events`. Only `useDVR` exposes `cursor` and `currentEvent`. Every component reading cursor or currentEvent imports from `useDVR`. Confirmed in: ComplianceBorder, ApiLogTab, WebhooksTab, ComplianceTab, StoreGuideTab, CertTipsTab, DVRControls.
+
+**Compliance API:** Single function `deriveComplianceResult(states)` returns `{ primary, color, active, label, metas }`. No `deriveComplianceColor` or `deriveActiveMeta` — those names are removed. Every component uses `result.color`, `result.label`, `result.metas`.
+
+**Test coverage for all engine modules:**
+- event-queue.ts + event-emitter.ts → tests/engine/event-queue.test.ts (emit tests added)
+- dvr.ts → tests/engine/dvr.test.ts
+- compliance.ts → tests/engine/compliance.test.ts
+- redaction.ts → tests/engine/redaction.test.ts
+- persona.ts → tests/engine/persona.test.ts
+- rbac.ts → tests/engine/rbac.test.ts
+- failure-modes.ts → tests/engine/failure-modes.test.ts
+- exam-mode.ts → tests/engine/exam-mode.test.ts
+- stripe-objects/examples.ts → tests/engine/stripe-objects.test.ts (Task 16)
 
 **Placeholder scan:** Zero TBDs. Every step has code.
