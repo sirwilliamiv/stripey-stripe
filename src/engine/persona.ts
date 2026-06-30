@@ -45,6 +45,14 @@ export const PERSONAS: Persona[] = [
     connectType: 'platform',
     useSso: true,
   },
+  {
+    id: 'frank',
+    name: 'Frank Developer',
+    role: 'platform_admin',
+    kycState: 'not_required',
+    connectState: 'none',
+    useSso: false,
+  },
 ]
 
 export function getPersonaById(id: string): Persona | undefined {
