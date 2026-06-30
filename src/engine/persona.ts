@@ -1,3 +1,5 @@
+import { create } from 'zustand'
+import { immer } from 'zustand/middleware/immer'
 import type { Persona } from './types'
 
 export const PERSONAS: Persona[] = [
@@ -56,3 +58,20 @@ export function getDefaultPersona(): Persona {
   if (!first) throw new Error('No personas defined')
   return first
 }
+
+// Zustand store — used by components that need reactive persona state and swap()
+interface PersonaState {
+  active: Persona
+  swap: (id: string) => void
+}
+
+export const usePersona = create<PersonaState>()(
+  immer((set) => ({
+    active: getDefaultPersona(),
+    swap: (id) =>
+      set((state) => {
+        const p = getPersonaById(id)
+        if (p) state.active = p
+      }),
+  }))
+)
