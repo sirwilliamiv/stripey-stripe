@@ -80,7 +80,9 @@ export function deriveComplianceResult(states: ComplianceState[]): ComplianceRes
   }
 
   const metas = active.map((s) => COMPLIANCE_CONFIG[s])
-  const nonIdle = active.filter((s) => s !== 'idle')
+  const nonIdle = active
+    .filter((s) => s !== 'idle')
+    .sort((a, b) => PRIORITY.indexOf(b) - PRIORITY.indexOf(a)) // highest priority first
   const label = nonIdle.length === 0
     ? 'Safe / Idle'
     : nonIdle.map((s) => COMPLIANCE_CONFIG[s].label).join(' + ')

@@ -6,11 +6,11 @@ import type { PlaybackSpeed } from '@/engine/types'
 const SPEED_OPTIONS: PlaybackSpeed[] = [0.5, 1, 2]
 
 export function DVRControls() {
-  const { cursor, isPlaying, isFrozen, speed, play, pause, stepForward, stepBack, jumpToStart, jumpToEnd, setSpeed } =
+  const { cursor, isPlaying, isFrozen, speed, play, pause, freeze, unfreeze, stepForward, stepBack, jumpToStart, jumpToEnd, setSpeed } =
     useDVR()
   const total = useEventQueue((s) => s.events.length)
 
-  const position = total === 0 ? '— / —' : `${cursor + 1} / ${total}`
+  const position = total === 0 ? '—' : `${cursor + 1}/${total}`
 
   return (
     <div className="flex items-center gap-2 px-3 py-2 border-t border-zinc-800 bg-zinc-950 text-xs text-zinc-400 select-none">
@@ -80,6 +80,14 @@ export function DVRControls() {
             {s}×
           </button>
         ))}
+        <button
+          onClick={isFrozen ? unfreeze : freeze}
+          className={`ml-1 px-2 py-0.5 rounded transition-colors ${
+            isFrozen ? 'bg-amber-900 text-amber-300' : 'hover:bg-zinc-800 text-zinc-400'
+          }`}
+        >
+          {isFrozen ? '🔒 frozen' : 'freeze'}
+        </button>
       </div>
     </div>
   )

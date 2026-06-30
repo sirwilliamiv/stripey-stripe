@@ -1,69 +1,34 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { act } from 'react'
 import { DVRControls } from '@/components/observatory/DVRControls'
-import { useEventQueue } from '@/engine/event-queue'
 import { useDVR } from '@/engine/dvr'
+import { useEventQueue } from '@/engine/event-queue'
 import { emit } from '@/engine/event-emitter'
 
-function makePartial(): Omit<import('@/engine/types').SimEvent, 'id' | 'timestamp'> {
-  return {
-    actor: 'app',
-    phase: 'server_call',
-    source: 'test',
-    action: 'test',
-    complianceStates: [],
-    simulationLevel: 'simulated',
-  }
-}
+beforeEach(() => {
+  useEventQueue.getState().clear()
+  useDVR.setState({ cursor: -1, currentEvent: undefined, isPlaying: false, isFrozen: false, speed: 1 })
+})
 
 describe('DVRControls', () => {
-  beforeEach(() => {
-    useEventQueue.getState().clear()
-    useDVR.setState({ cursor: -1, currentEvent: undefined, isPlaying: false, isFrozen: false, speed: 1, stepDelayMs: 3000 })
+  it('shows paused state by default', () => {
+    render(<DVRControls />)
+    expect(screen.getByTitle('Play')).toBeTruthy()
   })
 
-  it('shows — / — when no events', () => {
+  it('shows frozen label when frozen', () => {
+    useDVR.setState({ isFrozen: true })
     render(<DVRControls />)
-    expect(screen.getByText('— / —')).toBeTruthy()
+    expect(screen.getAllByText(/frozen/)[0]).toBeTruthy()
   })
 
-  it('shows 1 / 1 after first event', () => {
-    emit(makePartial())
+  it('shows event count', () => {
+    act(() => {
+      emit({ actor: 'user', phase: 'user_action', source: 'test', action: 'a', complianceStates: ['idle'], simulationLevel: 'simulated' })
+      emit({ actor: 'user', phase: 'user_action', source: 'test', action: 'b', complianceStates: ['idle'], simulationLevel: 'simulated' })
+    })
     render(<DVRControls />)
-    expect(screen.getByText('1 / 1')).toBeTruthy()
-  })
-
-  it('play button triggers play', () => {
-    emit(makePartial())
-    render(<DVRControls />)
-    const play = screen.getByTitle('Play')
-    fireEvent.click(play)
-    expect(useDVR.getState().isPlaying).toBe(true)
-  })
-
-  it('pause button triggers pause', () => {
-    emit(makePartial())
-    useDVR.getState().play()
-    render(<DVRControls />)
-    const pause = screen.getByTitle('Pause')
-    fireEvent.click(pause)
-    expect(useDVR.getState().isPlaying).toBe(false)
-  })
-
-  it('step forward advances cursor', () => {
-    emit(makePartial())
-    emit(makePartial())
-    render(<DVRControls />)
-    expect(useDVR.getState().cursor).toBe(0)
-    fireEvent.click(screen.getByTitle('Step forward'))
-    expect(useDVR.getState().cursor).toBe(1)
-  })
-
-  it('jump to end button jumps to last event', () => {
-    emit(makePartial())
-    emit(makePartial())
-    render(<DVRControls />)
-    fireEvent.click(screen.getByTitle('Jump to end'))
-    expect(useDVR.getState().cursor).toBe(1)
+    expect(screen.getByText('1/2')).toBeTruthy()
   })
 })

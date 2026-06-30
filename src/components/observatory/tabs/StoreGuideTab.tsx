@@ -8,7 +8,7 @@ export function StoreGuideTab() {
   if (!guide) {
     return (
       <div className="p-4 text-zinc-600 text-sm text-center mt-8">
-        No storage guidance for this event
+        No store guidance for current event.
       </div>
     )
   }

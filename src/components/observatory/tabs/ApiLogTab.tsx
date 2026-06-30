@@ -24,7 +24,7 @@ export function ApiLogTab() {
               transition={{ duration: 0.2 }}
               className={`rounded-lg border p-3 ${
                 currentEvent?.id === evt.id
-                  ? 'border-violet-600 bg-violet-950/30'
+                  ? 'border-indigo-400 bg-indigo-950/30'
                   : 'border-zinc-800 bg-zinc-900/50'
               }`}
             >
@@ -61,7 +61,7 @@ export function ApiLogTab() {
           ))}
         </AnimatePresence>
         {visibleEvents.length === 0 && (
-          <div className="text-zinc-600 text-center mt-8">Run a flow to see API calls</div>
+          <div className="text-zinc-600 text-center mt-8">No events yet. Run a flow to see API calls.</div>
         )}
       </div>
     </div>
