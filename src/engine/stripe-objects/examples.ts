@@ -1,62 +1,79 @@
-import type { StripeObjectExample } from '../types'
+import type { StripeObjectExample } from '@/engine/types'
 
 export const STRIPE_OBJECT_EXAMPLES: StripeObjectExample[] = [
   {
-    objectType: 'PaymentIntent',
-    id: 'pi_3OqXXXXXXXXXXXXX',
+    objectType: 'Customer',
+    id: 'cus_example123',
     data: {
-      id: 'pi_3OqXXXXXXXXXXXXX',
-      object: 'payment_intent',
-      amount: 2000,
-      currency: 'usd',
-      status: 'succeeded',
-      payment_method: 'pm_XXXXXXXXXXXXXXXX',
-      customer: 'cus_XXXXXXXXXXXXXXXX',
-      metadata: { order_id: 'ord_001' },
-      created: 1706745600,
-      livemode: false,
+      id: 'cus_example123',
+      object: 'customer',
+      email: 'alex@example.com',
+      name: 'Alex Buyer',
+      created: 1750000000,
+      default_source: null,
+      invoice_settings: { default_payment_method: 'pm_example456' },
+      metadata: { app_user_id: 'usr_789' },
     },
     relationships: [
-      { field: 'payment_method', objectType: 'PaymentMethod', description: 'The card or bank used' },
-      { field: 'customer', objectType: 'Customer', description: 'Who is paying' },
-      { field: 'invoice', objectType: 'Invoice', description: 'Set when created by a subscription' },
+      { field: 'default_source', objectType: 'PaymentMethod', description: 'Default payment method for charges' },
+      { field: 'invoice_settings.default_payment_method', objectType: 'PaymentMethod', description: 'Default PM for subscriptions' },
+    ],
+    webhookEvents: ['customer.created', 'customer.updated', 'customer.deleted'],
+    storeGuidance: {
+      store: ['id (as stripe_customer_id on your user record)'],
+      neverStore: ['Full customer object — it changes; fetch live'],
+      sourceOfTruth: ['email, name — Stripe is source of truth if you sync them there'],
+      listenFor: ['customer.updated to sync email changes'],
+    },
+  },
+  {
+    objectType: 'PaymentIntent',
+    id: 'pi_example789',
+    data: {
+      id: 'pi_example789',
+      object: 'payment_intent',
+      amount: 4999,
+      currency: 'usd',
+      status: 'succeeded',
+      customer: 'cus_example123',
+      payment_method: 'pm_example456',
+      capture_method: 'automatic',
+      confirmation_method: 'automatic',
+      created: 1750000100,
+      metadata: { order_id: 'ord_abc' },
+    },
+    relationships: [
+      { field: 'customer', objectType: 'Customer', description: 'The customer this charge belongs to' },
+      { field: 'payment_method', objectType: 'PaymentMethod', description: 'The payment method used' },
     ],
     webhookEvents: [
       'payment_intent.created',
-      'payment_intent.requires_action',
       'payment_intent.succeeded',
       'payment_intent.payment_failed',
+      'payment_intent.requires_action',
     ],
     storeGuidance: {
-      store: ['id (your DB FK)', 'status', 'amount', 'currency', 'metadata.order_id'],
-      neverStore: ['card number (PAN)', 'CVC', 'full PaymentMethod object'],
-      sourceOfTruth: ['Listen to payment_intent.succeeded before fulfilling'],
-      listenFor: ['payment_intent.succeeded', 'payment_intent.payment_failed'],
+      store: ['id', 'status', 'amount', 'metadata.order_id'],
+      neverStore: ['payment_method card details — never touch PANs'],
+      sourceOfTruth: ['status — always fetch live before fulfilling'],
+      listenFor: ['payment_intent.succeeded to fulfill; payment_intent.payment_failed to notify user'],
     },
   },
   {
     objectType: 'Subscription',
-    id: 'sub_XXXXXXXXXXXXXXXX',
+    id: 'sub_exampleABC',
     data: {
-      id: 'sub_XXXXXXXXXXXXXXXX',
+      id: 'sub_exampleABC',
       object: 'subscription',
       status: 'active',
-      customer: 'cus_XXXXXXXXXXXXXXXX',
-      current_period_end: 1709337600,
-      items: {
-        data: [
-          {
-            price: { id: 'price_XXXXXXXXXXXXXXXX', unit_amount: 2900, currency: 'usd', recurring: { interval: 'month' } },
-          },
-        ],
-      },
-      metadata: {},
-      created: 1706745600,
-      livemode: false,
+      customer: 'cus_example123',
+      current_period_start: 1750000000,
+      current_period_end: 1752592000,
+      cancel_at_period_end: false,
+      items: { data: [{ price: { id: 'price_monthly', unit_amount: 2999, currency: 'usd' } }] },
     },
     relationships: [
       { field: 'customer', objectType: 'Customer', description: 'Subscriber' },
-      { field: 'items.data[].price', objectType: 'Price', description: 'The recurring price' },
       { field: 'latest_invoice', objectType: 'Invoice', description: 'Most recent invoice' },
     ],
     webhookEvents: [
@@ -67,38 +84,14 @@ export const STRIPE_OBJECT_EXAMPLES: StripeObjectExample[] = [
       'invoice.payment_failed',
     ],
     storeGuidance: {
-      store: ['id', 'status', 'current_period_end', 'customer'],
-      neverStore: ['raw subscription object (cache stales quickly)'],
-      sourceOfTruth: ['current_period_end from invoice.payment_succeeded', 'status from subscription.updated'],
-      listenFor: ['customer.subscription.updated', 'invoice.payment_failed'],
-    },
-  },
-  {
-    objectType: 'Customer',
-    id: 'cus_XXXXXXXXXXXXXXXX',
-    data: {
-      id: 'cus_XXXXXXXXXXXXXXXX',
-      object: 'customer',
-      email: 'alice@example.com',
-      name: 'Alice Buyer',
-      metadata: { internal_user_id: 'user_001' },
-      created: 1706745600,
-      livemode: false,
-    },
-    relationships: [
-      { field: 'default_source', objectType: 'PaymentMethod', description: 'Default payment method' },
-      { field: 'subscriptions', objectType: 'Subscription', description: 'Active subscriptions' },
-    ],
-    webhookEvents: ['customer.created', 'customer.updated', 'customer.deleted'],
-    storeGuidance: {
-      store: ['id (map to your user ID in metadata)', 'email', 'metadata.internal_user_id'],
-      neverStore: ['email in plain text without encryption at rest'],
-      sourceOfTruth: ['Always re-fetch customer from Stripe if you need fresh data'],
-      listenFor: ['customer.deleted (revoke access)'],
+      store: ['id', 'status', 'current_period_end', 'cancel_at_period_end'],
+      neverStore: ['Full subscription object — status changes via webhooks'],
+      sourceOfTruth: ['status — fetch live; do not rely solely on your cached value'],
+      listenFor: ['customer.subscription.updated for status changes; invoice.payment_failed for dunning'],
     },
   },
 ]
 
-export function getExampleByType(objectType: string): StripeObjectExample | undefined {
+export function getObjectExample(objectType: string): StripeObjectExample | undefined {
   return STRIPE_OBJECT_EXAMPLES.find((e) => e.objectType === objectType)
 }

@@ -1,11 +1,11 @@
 "use client"
 import { useDVR } from '@/engine/dvr'
-import { getExampleByType } from '@/engine/stripe-objects/examples'
+import { getObjectExample } from '@/engine/stripe-objects/examples'
 
 export function StripeObjectTab() {
   const currentEvent = useDVR((s) => s.currentEvent)
   const objectType = currentEvent?.stripeObject
-  const example = objectType ? getExampleByType(objectType) : undefined
+  const example = objectType ? getObjectExample(objectType) : undefined
 
   if (!objectType) {
     return (
