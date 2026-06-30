@@ -1,69 +1,53 @@
 "use client"
-import * as Tabs from '@radix-ui/react-tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DVRControls } from './DVRControls'
 import { ApiLogTab } from './tabs/ApiLogTab'
 import { WebhooksTab } from './tabs/WebhooksTab'
+import { ObjectExplorerTab } from './tabs/ObjectExplorerTab'
+import { MoneyFlowTab } from './tabs/MoneyFlowTab'
 import { ComplianceTab } from './tabs/ComplianceTab'
 import { StoreGuideTab } from './tabs/StoreGuideTab'
 import { CertTipsTab } from './tabs/CertTipsTab'
-import { StripeObjectTab } from './tabs/StripeObjectTab'
-import { ExamTab } from './tabs/ExamTab'
 
 const TABS = [
-  { value: 'api-log', label: 'API Log' },
-  { value: 'webhooks', label: 'Webhooks' },
-  { value: 'compliance', label: 'Compliance' },
-  { value: 'store-guide', label: 'Store Guide' },
-  { value: 'cert-tips', label: 'Cert Tips' },
-  { value: 'stripe-object', label: 'Stripe Object' },
-  { value: 'exam', label: 'Exam' },
+  { value: 'api', label: 'API Log', component: ApiLogTab },
+  { value: 'webhooks', label: 'Webhooks', component: WebhooksTab },
+  { value: 'objects', label: 'Objects', component: ObjectExplorerTab },
+  { value: 'flow', label: 'Money Flow', component: MoneyFlowTab },
+  { value: 'compliance', label: 'Compliance', component: ComplianceTab },
+  { value: 'store', label: 'Store Guide', component: StoreGuideTab },
+  { value: 'cert', label: 'Cert Tips', component: CertTipsTab },
 ]
 
 export function Observatory() {
   return (
-    <div className="flex flex-col h-full bg-zinc-950 border-l border-zinc-800">
-      <div className="px-4 py-2 border-b border-zinc-800">
-        <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Observatory</span>
+    <div className="flex h-full flex-col">
+      <div className="border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+        <p className="font-mono text-xs font-semibold uppercase tracking-widest text-zinc-400">
+          Observatory
+        </p>
       </div>
-      <Tabs.Root defaultValue="api-log" className="flex flex-col flex-1 overflow-hidden">
-        <Tabs.List className="flex shrink-0 border-b border-zinc-800 overflow-x-auto scrollbar-none">
-          {TABS.map((tab) => (
-            <Tabs.Trigger
-              key={tab.value}
-              value={tab.value}
-              className="px-4 py-2 text-xs text-zinc-500 whitespace-nowrap border-b-2 border-transparent transition-colors data-[state=active]:text-violet-400 data-[state=active]:border-violet-500 hover:text-zinc-300"
+      <Tabs defaultValue="api" className="flex flex-1 flex-col overflow-hidden">
+        <TabsList className="shrink-0 justify-start rounded-none border-b border-zinc-200 bg-transparent px-3 dark:border-zinc-800">
+          {TABS.map((t) => (
+            <TabsTrigger
+              key={t.value}
+              value={t.value}
+              className="rounded-none border-b-2 border-transparent pb-2 pt-1 text-xs data-[state=active]:border-indigo-600 data-[state=active]:text-indigo-600"
             >
-              {tab.label}
-            </Tabs.Trigger>
+              {t.label}
+            </TabsTrigger>
           ))}
-        </Tabs.List>
-
-        <div className="flex-1 overflow-hidden">
-          <Tabs.Content value="api-log" className="h-full overflow-hidden">
-            <ApiLogTab />
-          </Tabs.Content>
-          <Tabs.Content value="webhooks" className="h-full overflow-hidden">
-            <WebhooksTab />
-          </Tabs.Content>
-          <Tabs.Content value="compliance" className="h-full overflow-y-auto">
-            <ComplianceTab />
-          </Tabs.Content>
-          <Tabs.Content value="store-guide" className="h-full overflow-y-auto">
-            <StoreGuideTab />
-          </Tabs.Content>
-          <Tabs.Content value="cert-tips" className="h-full overflow-y-auto">
-            <CertTipsTab />
-          </Tabs.Content>
-          <Tabs.Content value="stripe-object" className="h-full overflow-y-auto">
-            <StripeObjectTab />
-          </Tabs.Content>
-          <Tabs.Content value="exam" className="h-full overflow-y-auto">
-            <ExamTab />
-          </Tabs.Content>
+        </TabsList>
+        <div className="flex-1 overflow-y-auto">
+          {TABS.map(({ value, component: Tab }) => (
+            <TabsContent key={value} value={value} className="m-0 h-full">
+              <Tab />
+            </TabsContent>
+          ))}
         </div>
-
         <DVRControls />
-      </Tabs.Root>
+      </Tabs>
     </div>
   )
 }
