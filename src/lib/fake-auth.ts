@@ -1,21 +1,16 @@
-"use client"
-import { create } from 'zustand'
-import { immer } from 'zustand/middleware/immer'
+import { cookies } from 'next/headers'
+import { PERSONAS } from '@/engine/persona'
 import type { Persona } from '@/engine/types'
-import { getDefaultPersona, getPersonaById } from '@/engine/persona'
 
-interface FakeAuthState {
-  persona: Persona
-  setPersona: (id: string) => void
+const COOKIE_NAME = 'stripe_demo_persona'
+
+export async function getPersonaFromCookie(): Promise<Persona> {
+  const store = await cookies()
+  const id = store.get(COOKIE_NAME)?.value ?? 'alex'
+  return PERSONAS[id] ?? PERSONAS['alex']!
 }
 
-export const useFakeAuth = create<FakeAuthState>()(
-  immer((set) => ({
-    persona: getDefaultPersona(),
-    setPersona: (id) =>
-      set((s) => {
-        const found = getPersonaById(id)
-        if (found) s.persona = found
-      }),
-  }))
-)
+export async function setPersonaCookie(id: string): Promise<void> {
+  const store = await cookies()
+  store.set(COOKIE_NAME, id, { httpOnly: true, sameSite: 'lax', path: '/' })
+}

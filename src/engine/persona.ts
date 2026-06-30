@@ -1,58 +1,70 @@
+"use client"
+import { create } from 'zustand'
+import { immer } from 'zustand/middleware/immer'
 import type { Persona } from './types'
 
-export const PERSONAS: Persona[] = [
-  {
-    id: 'alice',
-    name: 'Alice Buyer',
+export const PERSONAS: Record<string, Persona> = {
+  alex: {
+    id: 'alex',
+    name: 'Alex',
     role: 'buyer',
     kycState: 'not_required',
     connectState: 'none',
-    useSso: false,
   },
-  {
-    id: 'bob',
-    name: 'Bob Seller',
+  maya: {
+    id: 'maya',
+    name: 'Maya',
     role: 'seller',
     kycState: 'verified',
     connectState: 'active',
     connectType: 'express',
-    useSso: false,
   },
-  {
-    id: 'cara',
-    name: 'Cara Freelancer',
-    role: 'freelancer',
+  jordan: {
+    id: 'jordan',
+    name: 'Jordan',
+    role: 'seller',
     kycState: 'pending',
     connectState: 'onboarding',
+    connectType: 'express',
+  },
+  sam: {
+    id: 'sam',
+    name: 'Sam',
+    role: 'freelancer',
+    kycState: 'verified',
+    connectState: 'active',
     connectType: 'custom',
-    useSso: false,
   },
-  {
-    id: 'dan',
-    name: 'Dan Enterprise',
+  dana: {
+    id: 'dana',
+    name: 'Dana',
     role: 'enterprise',
-    kycState: 'verified',
-    connectState: 'active',
-    connectType: 'platform',
+    kycState: 'not_required',
+    connectState: 'none',
     useSso: true,
   },
-  {
-    id: 'eva',
-    name: 'Eva Admin',
+  billy: {
+    id: 'billy',
+    name: 'Billy',
     role: 'platform_admin',
-    kycState: 'verified',
+    kycState: 'not_required',
     connectState: 'active',
     connectType: 'platform',
-    useSso: true,
   },
-]
-
-export function getPersonaById(id: string): Persona | undefined {
-  return PERSONAS.find((p) => p.id === id)
 }
 
-export function getDefaultPersona(): Persona {
-  const first = PERSONAS[0]
-  if (!first) throw new Error('No personas defined')
-  return first
+interface PersonaState {
+  active: Persona
+  swap: (id: string) => void
 }
+
+export const usePersona = create<PersonaState>()(
+  immer((set) => ({
+    active: PERSONAS['alex']!,
+    swap: (id) =>
+      set((state) => {
+        const p = PERSONAS[id]
+        if (p) state.active = p
+      }),
+  }))
+)

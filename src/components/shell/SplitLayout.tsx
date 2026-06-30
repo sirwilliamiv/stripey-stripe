@@ -1,18 +1,19 @@
+import type { ReactNode } from 'react'
+
 interface Props {
-  left: React.ReactNode
-  right: React.ReactNode
-  leftWidth?: string
+  business: ReactNode
+  observatory: ReactNode
 }
 
-export function SplitLayout({ left, right, leftWidth = '40%' }: Props) {
+export function SplitLayout({ business, observatory }: Props) {
   return (
-    <div className="flex h-full w-full overflow-hidden">
-      <div className="flex-shrink-0 overflow-auto" style={{ width: leftWidth }}>
-        {left}
-      </div>
-      <div className="flex-1 overflow-auto border-l border-zinc-800">
-        {right}
-      </div>
+    <div className="flex h-[calc(100vh-56px)] overflow-hidden">
+      <main className="w-[60%] overflow-y-auto border-r border-zinc-200 dark:border-zinc-800">
+        {business}
+      </main>
+      <aside className="w-[40%] overflow-y-auto bg-zinc-50 dark:bg-zinc-900">
+        {observatory}
+      </aside>
     </div>
   )
 }
